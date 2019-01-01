@@ -1,0 +1,2003 @@
+<?php
+
+require('Numbers/Words.php');
+include_once "font.inc";
+define('RECEPIT_PREFIX', 'ER-');
+
+
+function donation_help($path, $arg)
+{
+	$output = '';
+	switch ($path)
+	{
+    case "admin/help#donation":
+		$output = '<p>'.  t("Provides functionality to accept and print donation receipts") .'</p>';
+		break;
+	}
+	return $output;
+	
+}
+
+function donation_permission()
+{
+	$perms['access donation'] = array('title' => t('Access Donation pages') ) ;
+	$perms['administer donation'] = array('title' => t('Administer Donation module') ) ;
+	$perms['access donation report'] = array('title' => t('Access Donation reports') ) ;
+	$perms['access own donation'] = array('title' => t('Access Own Donations only') ) ;
+	$perms['edit own donation'] = array('title' => t('Edit Own Donations only'))  ;
+	$perms['fetch registration data'] = array('title' => t('Fetch Registration Data') ) ;
+	$perms['process mail queue'] = array('title' => t('Process Email Queue') ) ;
+	$perms['delete transaction'] = array('title' => t('Delete Transaction') ) ;
+	$perms['access registration settings'] = array('title' => t('Access Registration System Settings') ) ;
+
+	return $perms;
+}
+
+function donation_menu()
+{
+        $items['admin/donation'] = array( 'title' => t('Donation'),
+               'page arguments' => array('donation_admin_form'),
+               'page callback' => 'drupal_get_form',
+               'access arguments' => array('administer donation'));
+
+	$items['donation'] = array( 'title' => t('Donation'),
+	       'page callback' => 'donation_manage',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_LOCAL_TASK);
+
+	$items['donation/edit/%donation_id'] = array( 'title' => t('Edit Donation Detail'),
+	       'page callback' => 'donation_manage',
+		   'page arguments' => array(1),
+		   'access callback' => 'donation_edit_access',
+	       'type' => MENU_CALLBACK);
+
+	$items['donation/delete/%donation_id'] = array( 'title' => t('Delete Donation Detail'),
+	       'page callback' => 'donation_report',
+		   'page arguments' => array(1),
+		   'access callback' => 'donation_delete_access',
+	       'type' => MENU_CALLBACK);
+
+
+	$items['donation-report'] = array( 'title' => t('Donation Report'),
+	       'page callback' => 'donation_report',
+	       'access arguments' => array('access donation report'),
+	       'type' => MENU_NORMAL_ITEM);
+
+	$items['donation-report/excel'] = array( 'title' => t('Donation Report'),
+	       'page callback' => 'donation_report_xls',
+	       'access arguments' => array('access donation report'),
+	       'type' => MENU_NORMAL_ITEM);
+
+	$items['autocomplete/get-donors'] = array( 'title' => t('Donors'),
+	       'page callback' => '_get_donors',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+	$items['autocomplete/get-country'] = array( 'title' => t('Donors'),
+	       'page callback' => '_get_country',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+	$items['autocomplete/get-state'] = array( 'title' => t('Donors'),
+	       'page callback' => '_get_state',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+	$items['autocomplete/get-city'] = array( 'title' => t('Donors'),
+	       'page callback' => '_get_city',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+
+	$items['get-donor-detail'] = array( 'title' => t('Donors'),
+	       'page callback' => '_get_donor_detail',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+	$items['save-positions'] = array( 'title' => t('Donors'),
+	       'page callback' => '_save_positions',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+
+	$items['get-location-from-pincode'] = array( 'title' => t('Donors'),
+	       'page callback' => '_get_location_from_pincode',
+	       'access arguments' => array('access donation'),
+	       'type' => MENU_CALLBACK);
+
+
+	return $items;
+}
+
+
+function donation_id_load( $id )
+{
+	global $user;
+	$res = false;
+	$query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id)->condition('d_deleted', '0')->condition('d_synced', '0');
+	if (user_access('access own donation') && (!user_access('administer donation')) )
+	{
+		$query->condition('d_createdBy', $user->uid);	
+	}
+	$result = $query->execute();
+	if ( $result->rowCount() <= 0 )
+		return $res;
+	return true;
+}
+
+function donation_edit_access()
+{
+	if (user_access('administer donation') or user_access('edit own donation'))
+		return TRUE;
+	else
+		return FALSE;
+}
+
+
+function donation_delete_access()
+{
+	if (user_access('administer donation') or user_access('delete transaction'))
+		return TRUE;
+	else
+		return FALSE;
+}
+
+function donation_file_download($uri) 
+{
+	// Get the file record based on the URI. If not in the database just return.
+	//drupal_set_message($uri);
+	$file = drupal_realpath($uri);
+ 	if ( !file_exists($file) )
+ 	{
+ 		watchdog('File', 'File not Found - '.$uri);
+ 		return;
+ 	}
+ 	$ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+ 	
+	global $user;
+
+	if ( $ext == 'pdf' )
+	{
+		if (user_access('access donation'))
+		{
+			$name = basename($file);
+			$header = array('Content-Type' => 'application/pdf', 'Content-Length' => filesize($file), 'Content-disposition' => 'inline; filename="'.$name.'"',
+				'Cache-Control' => 'private');
+			return $header;
+		}		
+	}
+}
+
+
+
+function donation_admin_form($form, &$form_state)
+{
+
+	$query = "select c_code, c_name from dh_currency order by c_code";
+	$result = db_query( $query );
+	$currencies = array();
+	foreach($result as $row)
+		$currencies[ $row->c_code ] = $row->c_code.' - '.$row->c_name;
+
+    $val = variable_get('currency', 'INR');
+    $form['currency'] = array(
+         '#type' => 'select',
+         '#options' => $currencies,
+         '#required' => TRUE,
+         '#default_value' => $val,
+         '#title' => t('Default Currency'),
+         '#description' => t('Default Currency for dana'),
+   );
+
+    $val = variable_get('receipt_prefix', '');
+    $form['receipt_prefix'] = array(
+         '#type' => 'textfield',
+         '#size' => 10,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Receipt Prefix'),
+         '#description' => t('Prefix to the generated receipt No. For eg: ER- for E-Receipt'),
+   );
+
+
+    $val = variable_get('cost_category', 'Course - General');
+    $form['cost_category'] = array(
+         '#type' => 'textarea',
+         '#multiple' => true,
+         '#rows' => 5,
+         '#required' => TRUE,
+         '#default_value' => $val,
+         '#title' => t('Cost Categories with Cost Centres'),
+         '#description' => t('Separate Cost Category and Cost centres with a hyphen'),
+   );
+
+    $val = variable_get('txn_types', "cash=Cash\ncheque=Cheque\ncard=Credit/Debit Card\nneft=Bank Transfer\nrtgs=RTGS\nkind=Kind");
+    $form['txn_types'] = array(
+         '#type' => 'textarea',
+         '#multiple' => true,
+         '#rows' => 10,
+         '#required' => TRUE,
+         '#default_value' => $val,
+         '#title' => t('Transaction Types'),
+         '#description' => t('Key value pairs separated by ='),
+   );
+
+    if (user_access('access registration settings'))
+    {
+	    $val = variable_get('reg_app', 'none');
+		$form['reg_app'] = array('#type' => 'radios', '#title' => t('Registration System'),  '#required' => true,
+			'#options' => array('none' => 'None', 'dipi' => 'DIPI', 'calm' => 'CALM', 'dhammareg' => 'DhammaReg' ),
+			'#description' => 'Currently on DIPI is supported', 
+			'#default_value' => $val);
+
+	    $val = variable_get('reg_app_settings', '');
+		$form['reg_app_settings'] = array('#type' => 'textarea', '#title' => t('Registration System Settings'),  '#required' => false,
+	         '#multiple' => true,
+	         '#rows' => 10,
+			'#default_value' => $val);    	
+    }
+
+    $val = variable_get('donation_template', array('value' => '', 'format' => 'full_html') ) ;
+    $form['donation_template'] = array(
+         '#type' => 'text_format',
+         '#multiple' => true,
+         '#rows' => 35,
+         '#required' => TRUE,
+         '#format' => 'full_html',
+         '#default_value' => $val['value'],
+         '#title' => t('Donation Template'),
+         '#description' => t('Template which will be used for generating receipts'),
+   );
+
+
+    /*
+	Ability to send email, pushed to next phase    
+    $val = variable_get('email_subject', '');
+    $form['email_subject'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Email Subject'),
+         '#description' => t('Email subject'),
+   );
+
+    $val = variable_get('donation_template', '');
+    $form['donation_template'] = array(
+         '#type' => 'textarea',
+         '#multiple' => true,
+         '#rows' => 25,
+         '#required' => TRUE,
+         '#default_value' => $val,
+         '#title' => t('Donation Email Template'),
+         '#description' => t('Email template which will be used when sending email'),
+   );
+
+    $val = variable_get('donation_from', '');
+    $form['donation_from'] = array(
+         '#type' => 'textfield',
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Email From Name'),
+         '#description' => t('Email From name which will be used when sending email'),
+   );
+
+    $val = variable_get('donation_email', '');
+    $form['donation_email'] = array(
+         '#type' => 'textfield',
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('From Email'),
+         '#description' => t('Email which will be used when sending email'),
+   );
+
+    $val = variable_get('donation_email_bcc', '');
+    $form['donation_email_bcc'] = array(
+         '#type' => 'textfield',
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Email to send a bcc copy of the receipt'),
+         '#description' => t('Email to send a bcc copy of the receipt. For eg centre email id for reference'),
+   );
+   */
+ 
+   return system_settings_form($form);
+}
+
+
+function donation_manage()
+{
+	$row = array();
+	if (arg(2) > 0)
+	{
+		$id = arg(2);
+		//drupal_set_message("called - $id");
+		$query = "select d.*,don.d_id as 'donor_id',don.d_name,don.d_contact,don.d_gender,don.d_id_no,don.d_address,don.d_pincode,don.d_email,
+			co.c_name,s.s_name,ci.c_city from dh_donation d 
+			left join dh_donor don on d.d_donor=don.d_id left join dh_country co on don.d_country=co.c_code left join 
+			dh_state s on (don.d_state=s.s_code and don.d_country=s.s_country) left join dh_city ci on don.d_city=ci.c_id 
+			where d.d_id='$id'";
+		$res = db_query($query);
+		$row = $res->fetchAssoc();
+	}
+
+	$out = drupal_get_form('donation_main_form', $row);
+	return $out;
+}
+
+
+function donation_report()
+{
+	global $user;
+	if (arg(1) == 'delete')
+	{
+		db_update('dh_donation')->fields(array('d_deleted' => 1, 'd_deleted_date' => date('Y-m-d H:i:s'), 'd_deleted_by' => $user->uid))->condition('d_id', arg(2))->execute();
+		drupal_set_message("Transaction Cancelled successfully");
+		drupal_goto("donation-report");
+	}
+
+	$form_state = array(); 
+ 	$form_state['storage']['r_from'] = date('Y-m-d');
+	$form_state['storage']['r_to'] = date('Y-m-d');
+	$form_state['storage']['r_foreign'] = 'all';
+	$form_state['storage']['r_category'] = 'all';
+	$form_state['storage']['r_type'] = 'all';
+	$form_state['storage']['r_course'] = '';
+	$form_state['storage']['r_name'] = '';
+	$form_state['storage']['r_receipt'] = '';
+	$form_state['values'] = $form_state['storage'];
+	$out = drupal_build_form('donation_report_form',$form_state);
+
+//	drupal_form_submit('donation_report_form', );
+//	$out = drupal_get_form('donation_report_form');
+	return $out;	
+}
+
+
+function _get_country( $name )
+{
+	$q = 'select c_name from dh_country where c_name like \''.$name.'%\' order by c_name';
+	$return = db_query($q);
+	$matches = array();
+  	foreach ($return as $row) {
+    	$matches[$row->c_name] = $row->c_name;
+  	}
+  	drupal_json_output($matches);  	
+}
+
+function _get_state( $name )
+{
+	$country = $_REQUEST['country'];
+	$country_code = db_query("select c_code from dh_country WHERE c_name='$country'")->fetchField();
+	$q = 'select s_name from dh_state where s_country=\''.$country_code.'\' and  s_name like \''.$name.'%\' order by s_name';
+	$return = db_query($q);
+	$matches = array();
+  	foreach ($return as $row) {
+    	$matches[$row->s_name] = $row->s_name;
+  	}
+  	drupal_json_output($matches);  	
+}
+
+function _get_city( $name )
+{
+	$country = $_REQUEST['country'];
+	$country_code = db_query("select c_code from dh_country WHERE c_name='$country'")->fetchField();
+
+	$state = $_REQUEST['state'];
+	$state_code = db_query("select s_code from dh_state WHERE s_name='$state'")->fetchField();
+
+	$q = 'select c_city from dh_city where c_country=\''.$country_code.'\' and c_state=\''.$state_code.'\' and  c_city like \''.$name.'%\' order by c_city';
+	$return = db_query($q);
+	$matches = array();
+  	foreach ($return as $row) {
+    	$matches[$row->c_city] = $row->c_city;
+  	}
+  	drupal_json_output($matches);  	
+}
+
+
+function _get_location_from_pincode()
+{
+	$code = $_REQUEST['code'];
+	$matches = array();
+	$q = "select co.c_name,s.s_name,ci.c_city from dh_pincode p left join dh_city ci on p.p_city=ci.c_id left join 
+		dh_state s on (ci.c_state=s.s_code and ci.c_country=s.s_country) left join dh_country co on ci.c_country=co.c_code where 
+		p_code='$code' limit 0,1";
+	$return = db_query($q);
+
+  	foreach ($return as $row) {
+    	$matches[] = array( 'country' => $row->c_name, 'state' => $row->s_name, 'city' => $row->c_city );
+  	}
+
+  	drupal_json_output($matches);  	
+}
+
+function _get_donor_detail()
+{
+	$name = $_REQUEST['name'];
+	$course = $_REQUEST['course'];
+	$addr = $_REQUEST['addr'];
+	$course_type = '';
+	if ( $course > 0)
+  	   $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
+	$q = 'select d.*, co.c_name as \'country\', s.s_name, ci.c_city as \'city\' from dh_donor d left join dh_country co on d.d_country=co.c_code 
+		left join dh_state s on (d.d_state=s.s_code and d.d_country=s.s_country) left join dh_city ci on d.d_city=ci.c_id
+		where d.d_name like \'%'.$name.'%\'';
+	if (($course > 0) and ($course_type <> '1-day'))
+		$q .= " and d_course='$course'";
+	$q .= " limit 0,1";
+	$return = db_query($q);
+
+  	foreach ($return as $row) {
+    	$matches[] = array('name' => check_plain($row->d_name), 'address' => $row->d_address, 'country' => $row->country, 'did' => $row->d_id,
+    		'state' => $row->s_name, 'city' => $row->city, 'contact' => $row->d_contact, 'idno' => $row->d_id_no, 'pincode' => $row->d_pincode,
+    		'email' => $row->d_email, 'gender' => $row->d_gender);
+  	}
+	if ( $addr == '0' ) 
+	{
+		unset($matches['address']);
+	}
+  	drupal_json_output($matches);  	
+}
+
+function _save_positions()
+{
+	$data = $_REQUEST['data'];
+	if ($data <> '')
+		$arr = json_decode($data);
+	else
+		$arr = array();
+	
+	file_put_contents(drupal_realpath('public://')."/config.data", serialize($arr));
+	//echo "All good";
+	//watchdog('donation', print_r($arr,true));
+}
+
+
+function _get_positions()
+{
+	$pos = array();
+	$data = unserialize(file_get_contents(drupal_realpath('public://')."/config.data"));
+	foreach ($data as $obj) 
+	{
+		if( @$obj->field <> '')
+		{
+			$f = str_replace(array("edit-", "-") ,array("", "_"), $obj->field );
+			$pos[$f]['left'] = $obj->left;
+			$pos[$f]['top'] = $obj->top;			
+		}
+	}
+	//print_r($pos);
+	return $pos;
+}
+
+
+function _get_donors( $name )
+{
+	$course = '';
+	if ( isset($_REQUEST['course']))
+		$course = $_REQUEST['course'];
+	$matches = array();
+  	$query = db_select('dh_donor', 'd');
+        $course_type = '';
+        if ( $course > 0)
+           $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
+
+  	// Select rows that match the string
+  	if ( ($course > 0) && ($course_type <> '1 Day Course')  ) //in_array($course_type, array('10-day', '3-day', 'Executives', '2-day'))
+  	{
+	  	$return = $query
+	    	->fields('d', array('d_name', 'd_id'))
+	    	->condition('d.d_name', '%' . db_like($name) . '%', 'LIKE')
+	    	->condition('d.d_course', $course , '=')
+	    	->range(0, 10)
+	    	->orderBy('d_name', 'ASC')
+	    	->execute();	
+  	}
+	else if ( $course > 0 )
+	{
+	  	$return = $query
+	    	->fields('d', array('d_name', 'd_id'))
+	    	->condition('d.d_name', '%' . db_like($name) . '%', 'LIKE')
+	    	->range(0, 10)
+	    	->orderBy('d_name', 'ASC')
+	    	->execute();  		
+	}
+	else
+	  	$return = $query
+	    	->fields('d', array('d_name', 'd_contact', 'd_id'))
+	    	->condition('d.d_name', '%' . db_like($name) . '%', 'LIKE')
+	    	->range(0, 10)
+	    	->orderBy('d_name', 'ASC')
+	    	->execute();  		
+  
+  	$single = array();
+  	// add matches to $matches  
+  	foreach ($return as $row) {
+    	//$matches[] = array('label' => check_plain($row->d_name), 'value' => $row->d_id);
+    	if (property_exists($row, 'd_contact'))
+    		$matches[] = array('label' => $row->d_name.' - '.$row->d_contact, 'value' => $row->d_name);
+    	else	
+    		$matches[$row->d_name] = $row->d_name;
+
+    	$single[$row->d_name] = $row->d_name;
+  	}
+  	
+  	// return for JS
+  	if ( !isset($_REQUEST['course']))
+  		drupal_json_output($single);
+  	else
+  		drupal_json_output($matches);
+}
+
+
+function get_default( $field, $data, $val )
+{
+	if (isset($data['d_id']) && ($field =='submit'))
+		return 'Update Receipt';
+	if (!isset($data[$field]))
+		return $val;
+	return $data[$field];
+}
+
+function donation_main_form($form, &$form_state, $edit_data = array())
+{	
+
+	//$attribs = array('#theme' => 'form_panel_table', '#form_panel_weights_decimal' => TRUE);
+	//$position = _get_positions();
+	$attribs = array('class' => array('grid-stack') );
+	$attribs = array();
+
+	$query = "select c_code, c_name from dh_currency order by c_code";
+	$result = db_query( $query );
+	$currencies = array();
+	foreach($result as $row)
+		$currencies[ $row->c_code ] = $row->c_code.' - '.$row->c_name;
+
+	$txns = explode("\n", variable_get('txn_types', ""));
+	foreach ($txns as $v) 
+	{
+		$t = explode("=", $v);
+		$txn_types[trim($t[0])] = trim($t[1]);
+	}
+/*    $query = "select tm_display, tm_key from dh_tally_mapping where tm_foreign=0 and tm_enabled=1";
+    $result = db_query( $query );
+    $txn_types = array();
+    foreach($result as $row)
+            $txn_types[ $row->tm_key ] = $row->tm_display;
+*/
+
+
+	$query = "select c_id, CONCAT(DATE_FORMAT(c_start, '%Y'), ' / ', c_type, ' / ', DATE_FORMAT(c_start, '%D %b'), ' to ', DATE_FORMAT(c_end, '%D %b')) as 'a' 
+		from dh_course where c_start > SUBDATE(CURDATE(), INTERVAL 30 DAY) and c_start <= CURDATE() order by c_start";
+	$result = db_query( $query );
+	$courses = array('0' => t('Non Course') );
+	foreach($result as $row)
+		$courses[ $row->c_id ] = $row->a;
+
+	if ( (date("w") == 0) && (date('H') > 14 ) )
+		$default_course = db_query("select c_id from dh_course WHERE c_type ='1-day' and  CURDATE() = c_end")->fetchField();
+	else
+		$default_course = db_query("select c_id from dh_course WHERE SUBDATE(c_end, INTERVAL 1 DAY) = CURDATE() OR CURDATE() = c_end")->fetchField(); 
+
+	$form['#attributes'] = $attribs;
+
+	$form['d_course'] = array('#type' => 'select', '#title' => 'Select Course', 
+		'#options' => $courses, '#default_value' => get_default('d_course', $edit_data, $default_course), '#weight' => 1.1, '#attributes' => array('class' => array('col-sm-6')) );
+
+/*	$form['d_category'] = array('#type' => 'radios', '#title' => 'Category', '#required' => true, 
+		'#options' => array('general' => 'General', 'pagoda' => 'Pagoda', 'corpus' => 'Corpus' ), 
+		'#default_value' => get_default('d_category',$edit_data, 'general'), '#weight' => 1.2, '#attributes' => array('class' => array('col-sm-6')) );
+*/
+        $cost_categories = array();
+        foreach (explode("\n", variable_get("cost_category", '')) as $v )
+           $cost_categories[ trim($v) ] = trim($v);
+
+        $form['d_category'] = array('#type' => 'select', '#title' => 'Category', '#required' => true,
+                '#options' => $cost_categories,
+                '#default_value' => get_default('d_category',$edit_data, ''), '#weight' => 1.2, '#attributes' => array('class' => array('col-sm-6')) );
+
+	$form['d_gender'] = array('#type' => 'radios', '#title' => 'Gender', '#required' => true, 
+		'#options' => array('male' => 'Male', 'female' => 'Female', 'ms' => 'Organization' ), 
+		'#default_value' => get_default('d_gender', $edit_data, 'male'), '#weight' => 1.3, '#attributes' => array('class' => array('col-sm-4')) );
+
+	$form['d_name'] = array('#type' => 'textfield', '#size' => 50, '#title' => 'Donor Name', 
+		'#attached' => array(
+      		'library' => array(
+        		array('system', 'ui.autocomplete'),
+      	)),
+		'#required' => true, '#weight' => 3.1, '#default_value' => get_default('d_name',$edit_data, '') );
+
+	$form['d_id_no'] = array('#type' => 'textfield', '#size' => 20, '#title' => 'Pancard No', 
+		'#description' => 'Passport No for Foriegn Nationals','#weight' => 3.2, '#default_value' => get_default('d_id_no', $edit_data, '') );
+
+
+	$form['d_contact'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'Contact No', 
+		'#required' => true,  '#weight' => 4.1, '#default_value' => get_default('d_contact', $edit_data ,'') );
+	$form['d_pincode'] = array('#type' => 'textfield', '#size' => 15, '#title' => 'Post/Pin/Zip Code','#weight' => 4.2, '#default_value' => get_default('d_pincode',$edit_data, '') );
+	$form['d_email'] = array('#type' => 'textfield', '#size' => 45, '#title' => 'Email','#weight' => 4.3, '#default_value' => get_default('d_email', $edit_data, '') );
+
+	$form['d_country'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'Country', '#required' => true, '#weight' => 5.1, '#default_value' => get_default('c_name', $edit_data, '') );
+	$form['d_state'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'State', '#required' => true, '#weight' => 5.2, '#default_value' => get_default('s_name', $edit_data, '') );
+	$form['d_city'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'City','#weight' => 5.3, '#default_value' => get_default('c_city', $edit_data,'') );
+
+	$form['d_address'] = array('#type' => 'textfield', '#size' => 105, '#title' => 'Address','#weight' => 6.1, '#default_value' => get_default('d_address', $edit_data,'') );
+
+	$form['d_type'] = array('#type' => 'radios', '#title' => 'Type of Transaction', '#required' => true, 
+		'#options' => $txn_types, /*array('cash' => 'Cash', 'cheque' => 'Cheque', 'neft' => 'NEFT', 'rtgs' => 'RTGS',  'card' => 'Credit/Debit Card'), */
+		'#default_value' => get_default('d_type',$edit_data,'cash'), '#weight' => 7.1, '#attributes' => array('class' => array('col-sm-12')));
+
+	$form['d_date'] = array('#type' => 'textfield', '#default_value' => get_default('d_date',$edit_data,date('Y-m-d')), '#title' => 'Transaction Date',
+		'#attached' => array(
+      		'library' => array(
+        		array('system', 'ui.datepicker'),
+      	)),
+		'#size' => 15, '#weight' => 8.1, '#attributes' => array('class' => array('col-sm-4')));
+
+	$form['d_foreign'] = array('#type' => 'checkbox', '#title' => 'Foreign Student?' ,'#weight' => 8.2, '#default_value' => get_default('d_foreign',$edit_data,0) );
+
+	$form['d_amount'] = array('#type' => 'textfield', '#title' => 'Donation Amount', '#required' => true, '#size' => 10 ,
+		'#weight' => 9.1, '#default_value' => get_default('d_amount',$edit_data,'') );
+	$form['d_currency'] = array('#type' => 'select', '#title' => 'Currency', 
+		'#options' => $currencies,
+	 	'#default_value' => get_default('d_currency', $edit_data, variable_get('currency', 'INR')), '#weight' => 9.2, '#attributes' => array('class' => array('col-sm-6')));
+	
+	$group_chq = 'Cheque/Card/Bank Transfer';
+	$form[$group_chq] = $attribs + array('#type' => 'fieldset', '#collapsible' => true, '#collapsed' => false, '#title' => $group_chq, '#weight' => 10.1);
+	$form[$group_chq]['d_ref_no'] = array('#type' => 'textfield', '#size' => 25, '#title' => 'Reference No','#weight' => 1.1, '#default_value' => get_default('d_ref_no',$edit_data,'') );
+	$form[$group_chq]['d_bank'] = array('#type' => 'textfield', '#size' => 25, '#title' => 'Bank','#weight' => 1.2, '#default_value' => get_default('d_bank',$edit_data,'') );
+	$form[$group_chq]['d_branch'] = array('#type' => 'textfield', '#size' => 25, '#title' => 'Branch','#weight' => 1.3, '#default_value' => get_default('d_branch', $edit_data,'') );
+	$form[$group_chq]['d_chq_date'] = array('#type' => 'textfield', '#size' => 15, '#title' => 'Chq Date','#weight' => 1.4, '#default_value' => get_default('d_chq_date', $edit_data,'') );
+	
+	$form['d_comment'] = array('#type' => 'textfield', '#size' => 105, '#title' => 'Comment','#weight' => 11.1,'#default_value' => get_default('d_comment', $edit_data,'') );
+
+	$form['d_donor'] = array('#type' => 'hidden', '#value' =>  get_default('donor_id', $edit_data, '-1') );
+	$form['sub'] = array('#type' => 'submit', '#value' => get_default('submit',$edit_data,'Submit'), '#weight' => 12.1);
+	
+	$form['sub1'] = array('#type' => 'markup', '#markup' => '<div id="dialog-confirm" title="Confirm Details"></div>');
+
+
+
+	$a = "";
+	if (isset($_SESSION['pdffile']))
+	{
+		$a = 'file = "'.$_SESSION['pdffile'].'"; 
+  			var left = (screen.width/2)-400;
+  			var top = (screen.height/2)-250;
+		var pdf = window.open(file, "_blank", "width=800, height=500, left="+left+", top="+top+", resizable=0"); pdf.focus();';
+		unset($_SESSION['pdffile']);
+	}
+		
+ 	$js = '
+	(function ($) {
+		var file = "";
+		'.$a.'
+		var currentForm;
+
+
+		function get_positions()
+		{
+			var json = [];
+			$(".grid-item").each(function() {  
+				var p = $(this).position(); 
+				//alert( + " -> left :" + p.left + " : " + p.top) 
+				var j = new Object();
+				j.field = $(this).find("label").attr("for");
+				j.left = p.left;
+				j.top = p.top;
+				json.push(j);
+			}).promise().done( function(){ 
+
+				//alert(JSON.stringify(json)); 
+
+				$.ajax({
+				  type: "POST",
+				  url: "/save-positions",
+				  data: { data: JSON.stringify(json) },
+				  success: function(data){  alert(data);  },
+				  failure: function(errMsg) {
+				    alert(errMsg);
+				  }
+				});
+			});;
+		}
+
+		function get_donor_details( name )
+		{
+			var getaddr = 0;
+			$.getJSON("get-donor-detail",{course: $("#edit-d-course").val(), name: name, addr: getaddr}, function(data){
+				$("#edit-d-country").val(data[0].country);
+				$("#edit-d-state").val(data[0].state);
+				$("#edit-d-city").val(data[0].city);
+				$("#edit-d-id-no").val(data[0].idno);
+				$("#edit-d-contact").val(data[0].contact);
+				$("#edit-d-pincode").val(data[0].pincode);
+				$("#edit-d-address").val(data[0].address);
+				$("#edit-d-email").val(data[0].email);
+				$("input:radio[name=d_gender][value="+data[0].gender+"]").click();
+
+				$("input[name=d_donor]").attr("value",data[0].did);
+			});
+		}
+
+		function do_pincode( code )
+		{
+			$.getJSON("get-location-from-pincode",{ code: code}, function(data){
+				$("#edit-d-country").val(data[0].country);
+				$("#edit-d-state").val(data[0].state);
+				$("#edit-d-city").val(data[0].city);				
+			});
+		}
+
+		function form_ok()
+		{
+			//get_positions();
+			//alert($("input[name=d_donor]").val());
+			if ( ! check_amt() )
+				return false;
+			
+			if ($.trim( $("#edit-d-name").val() ) == "")
+			{
+				alert("'.t("Donor Name is required!").'" );
+				$("#edit-d-name").focus();
+				return false;	
+			}
+
+			//if ( ! check_id_no() )
+			//	return false;
+
+			if ($.trim( $("#edit-d-contact").val() ) == "")
+			{
+				alert("'.t("Contact No is required!").'" );
+				$("#edit-d-contact").focus();
+				return false;	
+			}
+
+			if ($.trim( $("#edit-d-country").val() ) == "")
+			{
+				alert("'.t("Country is required!").'");
+				$("#edit-d-country").focus();
+				return false;	
+			}
+
+			if ($.trim( $("#edit-d-state").val() ) == "")
+			{
+				alert("'.t("State is required!").'");
+				$("#edit-d-state").focus();
+				return false;	
+			}
+
+			if ($.trim( $("#edit-d-email").val() ) != "")
+			{
+				if ( ! isEmail( $("#edit-d-email").val() ))
+				{
+					alert("'.t("Email is invalid!").'");
+					$("#edit-d-email").focus();
+					return false;						
+				}
+			}
+			return true;
+		}
+
+		function check_amt()
+		{
+			var res = true;
+			var regpan = /^([0-9])+$/;
+			if(regpan.test($("#edit-d-amount").val()) == false)
+			{
+				res = false;
+				alert("'.t("Please enter a valid amount!").'");
+				$("#edit-d-amount").focus();
+			}			
+			return res;					
+		}
+
+		function check_id_no()
+		{
+			var res = true;
+			if (! $("#edit-d-foreign").is(":checked"))
+			{
+				if ( $("#edit-d-id-no").val() == "" )
+					return true;
+				var regpan = /^([a-zA-Z]){5}([0-9]){4}([a-zA-Z]){1}?$/;
+				if(regpan.test($("#edit-d-id-no").val()) == false)
+				{
+					res = false;
+					alert("Invalid PAN card no!");
+					$("#edit-d-id-no").focus();
+				}					
+			}
+			else
+			{
+				if ( $.trim( $("#edit-d-id-no").val() ) == "" )
+				{
+					res = false;
+					alert("'.t("Passport No is mandatory for Foriegn Students").'");
+					$("#edit-d-id-no").focus();
+				}
+			}
+			return res;
+		}
+
+
+		function isEmail(email) 
+		{
+ 			var regex = /^([a-zA-Z0-9_.+-])+\@(([a-zA-Z0-9-])+\.)+([a-zA-Z0-9]{2,4})+$/;
+  			return regex.test(email);
+		}
+
+		function confirm_form()
+		{
+			var t;
+			t = "<table>";
+			t += "<tr><td>Course</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-course option:selected").text()+"</b></td></tr>";
+			t += "<tr><td>Category</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-category option:selected").text()+"</b></td></tr>";
+			t += "<tr><td>Gender</td><td>&nbsp;&nbsp;</td><td><b>"+$("input[name=d_gender]:checked").next("label:first").text()+"</b></td></tr>";
+			t += "<tr><td>Donor Name</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-name").val()+"</b></td></tr>";
+			t += "<tr><td>NI/SSN/DIN/NID/PAN/ID</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-id-no").val()+"</b></td></tr>";
+			t += "<tr><td>Contact</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-contact").val()+"</b></td></tr>";
+			t += "<tr><td>Post/Zip Code/</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-pincode").val()+"</b></td></tr>";
+			t += "<tr><td>Email</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-email").val()+"</b></td></tr>";
+			t += "<tr><td>Country/State/City</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-country").val()+"/ "+$("#edit-d-state").val()+" / "+$("#edit-d-city").val()+"</b></td></tr>";
+			t += "<tr><td>Address</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-address").val()+"</b></td></tr>";			
+			t += "<tr><td>Type of Transaction</td><td>&nbsp;&nbsp;</td><td><b>"+$("input[name=d_type]:checked").next("label:first").text()+"</b></td></tr>";
+			t += "<tr><td>Amount</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-amount").val()+" "+$("#edit-d-currency").val()+"</b></td></tr>";
+			t += "<tr><td>Amount Details</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-ref-no").val()+"/"+$("#edit-d-bank").val()+"/"+$("#edit-d-branch").val()+"/"+$("#edit-d-chq-date").val()+" </b></td></tr>";
+			t += "</table>";
+			$("#dialog-confirm").html(t);
+		    $( "#dialog-confirm" ).dialog({
+		      resizable: false,
+      		  height: "auto",
+      		  width: 400,
+      		  modal: true,
+      		  buttons: {
+        		"Confirm": function() {
+          			$( this ).dialog( "close" );
+          			currentForm.submit();
+        	    },
+        		Cancel: function() {
+          			$( this ).dialog( "close" );
+          			
+        		}
+      		  }
+    		});
+		}
+
+		$(document).ready(function(){
+
+			//$("#donation-main-form").gridster({widget_selector: ".grid-item"});
+			//$("#donation-main-form").shapeshift({ selector: ".form-item", colWidth: 200});
+			/*var grid = document.querySelector("#donation-main-form");
+			var pckry = new Packery( grid, {
+			  itemSelector: ".grid-item",
+			  gutter: 10,
+			  // columnWidth helps with drop positioning
+			  percentPosition: true,
+			  //initLayout: false,
+			});
+			var $grid = $("#donation-main-form").packery({
+			  itemSelector: ".grid-item",
+			  gutter: 10,
+			 // percentPosition: true,
+			 // initLayout: false // disable initial layout
+			});
+			*/
+
+			// make all items draggable
+			//var $items = $grid.find(".grid-item").draggable();
+			// bind drag events to Packery
+			//$grid.packery( "bindUIDraggableEvents", $items );
+
+			//var initPositions = localStorage.getItem("dragPositions1");
+			// init layout with saved positions
+			//pckry.initShiftLayout( initPositions, "data-item-id" );
+
+
+			/*var items = grid.querySelectorAll(".grid-item");
+			for ( var i=0; i < items.length; i++ ) {
+			  var itemElem = items[i];
+			  var draggie = new Draggabilly( itemElem );
+			  pckry.bindDraggabillyEvents( draggie );
+			}*/
+
+			/*
+			$grid.find(".grid-item").each( function( i, gridItem ) {
+			  var top =  $(gridItem).attr("data-top"),
+			        left = $(gridItem).attr("data-left"),
+			        draggie = new Draggabilly( gridItem );
+			  $grid.packery("bindDraggabillyEvents", draggie);
+			  $grid.packery("fit", gridItem, left, top);
+			  $grid.packery("shiftLayout");
+			});
+			*/
+			
+
+			/*pckry.on( "dragItemPositioned", function() {
+			  var positions = pckry.getShiftPositions("data-item-id");
+			  // save drag positions
+			  localStorage.setItem( "dragPositions", JSON.stringify( positions ) );
+			});
+			*/
+
+			//alert(JSON.stringify(pckry.getShiftPositions("data-item-id") ) );
+			$("#edit-d-course").focus();
+			$("#edit-chequecardbank-transfer").hide();
+			$(".form-item-d-currency").hide();
+			$("#edit-d-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-1Y", maxDate: 0});
+                        $("#edit-d-chq-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-6M", maxDate: "6M"});
+
+			$("input[name=\"d_type\"]:radio").change(function(){
+            	//alert("called");
+				if (($(this).val() != "cash") && ($(this).val() != "kind"))
+					$("#edit-chequecardbank-transfer").show();
+				else
+					$("#edit-chequecardbank-transfer").hide();
+			});
+
+
+			$("#edit-d-foreign").click(function() {
+   			    $(".form-item-d-currency").toggle(this.checked);
+			});
+
+			$("#edit-d-amount").change(function(){
+				check_amt();
+			});
+			
+
+			/*$("#edit-d-id-no").change(function(){
+				check_id_no();
+			});*/
+
+			$("#edit-d-name").autocomplete({
+				source: function( request, response ) {
+			        $.ajax({
+			          url: "/autocomplete/get-donors/" + request.term,
+			          dataType: "json",
+			          data: {
+			            course: $("#edit-d-course").val()
+			          },
+			          success: function( data ) {
+			            response( data );
+			          }
+			        });
+				},
+      			minLength: 2,
+      			select: function( event, ui ) {
+      				get_donor_details(ui.item.value);
+		        },
+		        open: function() {
+		           $( this ).removeClass( "ui-corner-all" ).addClass( "ui-corner-top" );
+		        },
+		        close: function() {
+		           $( this ).removeClass( "ui-corner-top" ).addClass( "ui-corner-all" );
+		        }      			
+			});
+
+			$("#edit-d-name").keyup(function(){
+				if (!$(this).val())
+				{
+					//alert("called");
+					$("input[name=d_donor]").attr("value" ,"-1");
+					$("#edit-d-country").val("");
+					$("#edit-d-state").val("");
+					$("#edit-d-city").val("");
+					$("#edit-d-id-no").val("");
+					$("#edit-d-contact").val("");
+					$("#edit-d-pincode").val("");
+					$("#edit-d-address").val("");
+					$("#edit-d-email").val("");
+				}
+			});
+
+			$("#edit-d-pincode").change(function(){
+				do_pincode($(this).val());
+			});
+
+			$("#edit-d-country").autocomplete({
+				source: function( request, response ) {
+			        $.ajax({
+			          url: "/autocomplete/get-country/" + request.term,
+			          dataType: "json",
+			          success: function( data ) {
+			            response( data );
+			          }
+			        });
+				},
+      			minLength: 1,
+			});
+			
+			$("#edit-d-state").autocomplete({
+				source: function( request, response ) {
+			        $.ajax({
+			          url: "/autocomplete/get-state/" + request.term,
+			          dataType: "json",
+			          data: {country: $("#edit-d-country").val()},
+			          success: function( data ) {
+			            response( data );
+			          }
+			        });
+				},
+      			minLength: 1,
+			});
+
+			$("#edit-d-city").autocomplete({
+				source: function( request, response ) {
+			        $.ajax({
+			          url: "/autocomplete/get-city/" + request.term,
+			          dataType: "json",
+			          data: {country: $("#edit-d-country").val(), state: $("#edit-d-state").val()},
+			          success: function( data ) {
+			            response( data );
+			          }
+			        });
+				},
+      			minLength: 1,
+			});
+
+
+			$("input,select").keydown(function (e) {
+			     if (e.which == 13) {
+			     	 event.preventDefault();
+			     	 var inputs = $(this).closest("form").find(":input:visible");
+			         inputs.eq( inputs.index(this)+ 1 ).focus();
+
+			     }
+			 });
+
+			$( "#donation-main-form" ).submit(function( event ) {
+				if (! form_ok())
+			  		event.preventDefault();
+				else
+				{
+					event.preventDefault();
+					currentForm = this;
+					confirm_form();
+					//$(this).find(":submit").attr("disabled","disabled");
+				}
+
+			});
+
+
+		});
+	})(jQuery);
+	';
+	//drupal_add_js(drupal_get_path('module', 'donation').'/packery.pkgd.min.js');
+	//drupal_add_js(drupal_get_path('module', 'donation').'/draggabilly.pkgd.min.js');
+	//drupal_add_js(drupal_get_path('module', 'donation').'/packery.extra.js');
+	//drupal_add_js(drupal_get_path('module', 'donation').'/jquery.gridster.js');
+	drupal_add_css(drupal_get_path('module', 'donation').'/donation.css');
+	drupal_add_js($js, 'inline');
+
+	return $form;
+}
+
+function donation_main_form_submit($form, &$form_state)
+{
+	global $user;
+	foreach ($form_state['input'] as $key => $value) 
+	{
+		if ( substr($key,0,2) == 'd_')
+			$data[$key] = $value;
+	}
+	$donor['d_name'] = $data['d_name'];
+	$donor['d_id_no'] = strtoupper($data['d_id_no']);
+	$donor['d_country'] = get_country($data['d_country']);
+	$donor['d_state'] = get_state($data['d_state'], $donor['d_country']);
+	$donor['d_city'] = get_city($data['d_city'], $donor['d_state'], $donor['d_country']);
+	$donor['d_contact'] = $data['d_contact'];
+	$donor['d_address'] = $data['d_address'];
+	$donor['d_pincode'] = $data['d_pincode'];
+	$donor['d_gender'] = $data['d_gender'];
+	$donor['d_email'] = $data['d_email'];
+
+	$donor['d_error'] = '';
+	if ($donor['d_country'] == '')
+		$donor['d_error'] = 'No Country '.$data['d_country']."\n";
+	if ($donor['d_state'] == '')
+		$donor['d_error'] .= 'No State '.$data['d_state']."\n";
+	if (($donor['d_city'] == 0) && ($data['d_city'] <> ''))
+		$donor['d_error'] .= 'No City '.$data['d_city']."\n";
+
+
+	if ( $data['d_donor'] == '-1')
+	{
+		$donor['d_occupation'] = '';
+		$donor['d_course'] = $data['d_course'];
+ 		//New Donor
+		$data['d_donor'] = db_insert('dh_donor')->fields($donor)->execute(); 
+
+	}
+	else
+	{
+		db_update('dh_donor')->fields($donor)->condition('d_id', $data['d_donor'])->execute();
+	}
+	unset($data['d_name']); unset($data['d_id_no']); unset($data['d_country']); unset($data['d_state']);unset($data['d_city']);
+	unset($data['d_contact']); unset($data['d_address']); unset($data['d_pincode']);unset($data['d_email']); unset($data['d_gender']); 
+	//unset($data['d_tax_payer']);
+
+//	$data['d_receipt'] = file_stream_wrapper_get_instance_by_uri('public://')->getDirectoryPath().'/receipts/'.$receipt.'.pdf';
+	$data['d_foreign'] = $data['d_foreign']?1:0;
+	if ( $data['d_chq_date']  == '' )
+		unset( $data['d_chq_date']);
+	$amended = 0;
+	if (arg(2) == '')
+	{
+		$data['d_created'] = date('Y-m-d H:i:s');
+		$data['d_createdBy'] = $user->uid;
+		$donation_id = db_insert('dh_donation')->fields($data)->execute();
+		$action = "created"; 
+	}
+	else
+	{
+		$data['d_lastupdated'] = date('Y-m-d H:i:s');
+		$data['d_updatedBy'] = $user->uid;
+		$donation_id = arg(2);
+		db_update('dh_donation')->fields($data)->condition('d_id', $donation_id)->execute(); 
+		$action = "updated";
+		$amended = 1;
+	}
+
+	$receipt = variable_get('receipt_prefix', '').str_pad($donation_id, 7, "0", STR_PAD_LEFT);
+
+	$file = generate_receipt( $donation_id, $amended );
+
+	if ($donation_id > 0 )
+	{
+		drupal_set_message(t("Receipt No $receipt $action successfully"));
+		//send_donor_email( $donation_id );
+		$_SESSION['pdffile'] = file_create_url($file); 
+		drupal_goto("donation");
+		//drupal_add_js('<script type="text/javascript">	var pdf = window.open("'.$file.'", "_blank", "width=800, height=500, resizable=0");	alert("caleed");
+//</script>', 'inline'); 
+		//drupal_goto("$file");
+	}
+	else
+		drupal_set_message(t("Some error occurred, Pls try again."), "error");
+}
+
+function generate_receipt( $id, $amended )
+{
+	global $user;
+	$q = "select d.*,don.d_gender,don.d_name,don.d_contact,don.d_address,don.d_country,don.d_state, don.d_id_no, don.d_pincode, c.c_city from 
+		dh_donation d left join dh_donor don on d.d_donor=don.d_id left join dh_city c on don.d_city=c.c_id where d.d_id='$id'";
+	$handle = db_query($q);
+	if ($handle->rowCount() <=0 )
+		return;
+	$row = $handle->fetchAssoc();
+
+	if ($row['d_gender'] == 'male')
+		$mr_ms = 'Mr. ';
+	elseif ( $row['d_gender'] == 'female')
+		$mr_ms = 'Ms. ';
+	else
+		$mr_ms = '';
+	$nw = new Numbers_Words();
+	$receipt_data = array();
+	$receipt_data['receipt-no'] = variable_get('receipt_prefix').str_pad($id, 7, "0", STR_PAD_LEFT);;
+	$receipt_data['receipt-date'] = $row['d_date'];
+	$name = $mr_ms.$row['d_name'];
+	if (strlen($name) > 40)
+		$name = '<div class="name-small">'.$name.'</div>';
+	$receipt_data['donor-name'] = $name;
+
+	$receipt_data['donor-address'] = $row['d_address'].' - '.$row['d_pincode'].' '.$row['c_city'].' '.$row['d_state'].' '.$row['d_country'];
+	if (strlen($receipt_data['donor-address']) > 90)
+		$receipt_data['donor-address'] = '<div class="smallest">'.substr($receipt_data['donor-address'], 0, 100).'</div>';
+	else
+	{
+		$receipt_data['donor-address'] = '<div class="smaller">'.$receipt_data['donor-address'].'</div>';
+	}
+	$receipt_data['currency'] = $row['d_currency'];
+	$receipt_data['amount'] = number_format($row['d_amount']);
+	$receipt_data['amount-words'] = ucwords($nw->toWords($row['d_amount'], 'en_IN') );
+	$receipt_data['type'] = strtoupper($row['d_type']);
+	if ( $row['d_type'] <> 'cash' )
+	{
+		if ( $row['d_bank'] <> '')
+		    $receipt_data['on-bank'] = 'On Bank '.$row['d_bank'];
+		else
+		    $receipt_data['on-bank'] = '';
+		$receipt_data['ref-no'] = 'Ref No '.$row['d_ref_no'];
+	}
+	else
+	{
+		$receipt_data['on-bank'] = '';
+		$receipt_data['ref-no'] = '';
+	}
+	if (in_array($row['d_category'], array('corpus', 'pagoda', 'Course - Corpus-C', 'Course - Pagoda-C', 'Other Than Courses - Pagoda', 'Other Than Courses - Corpus')))
+		$receipt_data['not-corpus'] = '';
+	else
+		$receipt_data['not-corpus'] = 'not ';
+
+	$receipt_data['category'] = strtoupper($row['d_category']);
+	if ( strlen($receipt_data['on-bank'].$receipt_data['ref-no'].$receipt_data['category']) > 52 )
+		$receipt_data['category'] = substr($receipt_data['category'],0,10).'...';
+	if ($row['d_foreign'])
+		$receipt_data['pan-or-passport'] = 'Passport No';
+	else
+		$receipt_data['pan-or-passport'] = 'PAN';
+	$receipt_data['id-no'] = $row['d_id_no'];
+	$receipt_data['contact'] = $row['d_contact'];
+
+	$receipt_data['user-c'] = sanitize($user->name);
+	$receipt_data['donor-c'] = sanitize($row['d_name']);
+	generate_sign($receipt_data['user-c'] );
+	//generate_sign($receipt_data['donor-c'] );
+
+
+	$outfile = $row['d_receipt'];
+	//if ($outfile == '')
+	//{
+	$outfile = file_stream_wrapper_get_instance_by_uri('private://')->getDirectoryPath().'/receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
+	//}
+	$outuri = 'private://'.'receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
+
+	db_update('dh_donation')->fields(array('d_receipt' => $outuri))->condition('d_id', $id)->execute();
+	$search = array();
+	$replace = array();
+	foreach($receipt_data as $k => $v)
+	{
+		$search[] = '['.$k.']';
+		$replace[] = $v;
+	}
+	$template = variable_get('donation_template', array('value' => '', 'format' => 'full_html')); //conf_path().'/templates/donation-template';
+	$base_path = 'file://'.drupal_realpath(".");
+	$content = str_replace('/sites/all/modules/donation/templates/', $base_path.'/sites/all/modules/donation/templates/', $template['value']) ;
+	
+	//$content = $template['value'];
+	$new = str_replace($search, $replace, $content);
+
+	$tmpfile = tempnam("/tmp", "RCPT");
+	$tmpfile_html = $tmpfile.'.html';
+	$handle = fopen($tmpfile_html, "w");
+	fwrite($handle, $new);
+	fclose($handle);
+
+	$cmd = "/usr/local/bin/wkhtmltopdf $tmpfile_html $outfile";
+	//drupal_set_message($cmd);
+	exec($cmd);
+	unlink($tmpfile);
+	unlink($tmpfile_html);
+	//drupal_set_message($cmd);
+	return $outuri;
+
+}
+
+function process_mail_queue()
+{
+	$q = "select d_id from dh_donation where d_deleted=0 and d_mail_queue=1";
+	$hand = db_query($q);
+	while ( $row = $hand->fetchAssoc() )
+	{
+		if (send_donor_email($row['d_id']))
+		{
+			db_update('dh_donation')->fields(array('d_mail_queue' => 0))->condition('d_id', $row['d_id'])->execute();
+		}
+
+	} 
+}
+
+
+function send_donor_email( $id )
+{
+	$q = "select d.*,don.d_gender,don.d_name, don.d_email from 
+	dh_donation d left join dh_donor don on d.d_donor=don.d_id where d.d_id='$id'";
+	$handle = db_query($q);
+	if ($handle->rowCount() <=0 )
+	{
+		drupal_set_message(t("Could not find donation id $id") );
+		return;
+	}
+	$row = $handle->fetchAssoc();
+	if ( $row['d_email'] == "")
+	{
+		drupal_set_message(t("No email address to send e-Receipt") );
+		return;		
+	}
+
+    $mail['module'] = 'mimemail';
+    $mail['key'] = time();
+    $mail['id'] = 'donation-mail';
+    $mail['to'] = $row['d_email'];
+    $mail['subject'] = str_replace(array('<name>', '<id>'), array($row['d_name'], $id), variable_get('email_subject', 'Thank you')) ; 
+    $mail['body'][] = str_replace(array('<name>', '<id>'), array($row['d_name'], $id), variable_get('donation_template', '')) ;
+    $mail['from'] = variable_get('donation_email', '');
+    $mail['headers']['MIME-Version'] =  '1.0';
+    $mail['headers']['Content-Type'] = 'text/html; charset=UTF-8; format=flowed';
+    $mail['headers']['Content-Transfer-Encoding'] = '8Bit';
+    $mail['headers']['X-Mailer'] = 'Dhamma';
+    $mail['headers']['From'] = variable_get('donation_from', '');
+    //if ( variable_get('donation_email_bcc', '') <> '')
+    $mail['headers']['Bcc'] = variable_get('donation_email_bcc', '');
+
+    //drupal_set_message(file_stream_wrapper_get_instance_by_uri($row['d_receipt'])->realpath());
+    $fname = file_stream_wrapper_get_instance_by_uri($row['d_receipt'])->realpath();
+	$attachments=array(
+	  'path' => $fname,
+	  'filecontent' => file_get_contents( $fname ),
+	  'filename' => basename($fname),
+	  'mime' => 'application/pdf',
+	  'encoding' => 'base64',
+      'disposition' => 'attachment',
+	);
+	$mail['params']['attachments'][0] = $attachments;
+
+	$system = drupal_mail_system('mimemail', time());
+	$message = $system->format($mail);
+
+	if ($system->mail($message)) 
+  		return TRUE;
+	else 
+  		return FALSE;
+}
+
+function get_country($name)
+{
+   $q = "select c_code from dh_country where c_name='$name' limit 1";
+   $country_code = db_query($q)->fetchField();
+   return $country_code;
+}
+
+function get_state($name, $country)
+{
+   $q = "select s_code from dh_state where s_country='$country' and s_name='$name' limit 1";
+   $state_code = db_query($q)->fetchField();
+   return $state_code;
+}
+
+
+function get_city( $name, $state, $country )
+{
+   $name = str_ireplace('navi', 'new', $name);
+   $q = "select c_id from dh_city where c_country='$country' and c_state='$state' and c_city='$name' limit 1";
+   $city_id = db_query($q)->fetchField();
+   if ($city_id == '')
+   	  $city_id = 0;
+   return $city_id;
+}
+
+
+function donation_report_form($form, &$form_state)
+{
+	global $user;
+	//drupal_add_library('system', 'ui.datepicker');
+	//
+
+	$query = "select c_id, CONCAT(DATE_FORMAT(c_start, '%Y'), ' / ', c_type, ' / ', DATE_FORMAT(c_start, '%D %b'), ' to ', DATE_FORMAT(c_end, '%D %b')) as 'a' 
+		from dh_course where c_start > SUBDATE(CURDATE(), INTERVAL 365 DAY) and c_start <= CURDATE() order by c_start";
+	$result = db_query( $query );
+	$courses = array('' => t('Choose'), '0' => t('Non Course') );
+	foreach($result as $row)
+		$courses[ $row->c_id ] = $row->a;
+
+
+	$q = "select name, uid from users where name <> '' order by name ";
+	$res = db_query($q);
+	$created_by = array('' => 'Choose');
+	foreach( $res as $row )
+	    $created_by[$row->uid] = $row->name; 
+
+
+	$txns = explode("\n", variable_get('txn_types', ""));
+    $txn_types = array('all' => 'All');
+    $txn_types_totals = array();
+    $txn_types_qry = '';
+	foreach ($txns as $v) 
+	{
+		$t = explode("=", $v);
+		$txn_types[trim($t[0])] = trim($t[1]);
+        $txn_types_totals[] = trim($t[1]);
+        $txn_types_qry .= "IF(d.d_type='".trim($t[0])."',d.d_amount,'') as '".trim($t[1])."', ";
+	}
+
+
+    /*$query = "select tm_display, tm_key from dh_tally_mapping where tm_foreign=0 and tm_enabled=1";
+    $result = db_query( $query );
+
+    $txn_types = array('all' => 'All');
+    $txn_types_qry = '';
+    $txn_types_totals = array();
+    foreach($result as $row)
+    {
+            $txn_types[ $row->tm_key ] = $row->tm_display;
+            $txn_types_qry .= "IF(d.d_type='".$row->tm_key."',d.d_amount,'') as '".$row->tm_display."', ";
+            $txn_types_totals[] = $row->tm_display;
+    }
+    */
+
+	drupal_add_css(drupal_get_path('module', 'donation').'/donation.css');
+
+	$form['r_from'] = array('#type' => 'textfield', '#default_value' => date('Y-m-d'), '#title' => t('From Date'),
+		'#attached' => array(
+      		'library' => array(
+        		array('system', 'ui.datepicker'),
+        		array('system', 'ui.dialog'),
+
+      	)),
+		'#size' => 15, '#weight' => 1.2);
+
+	$form['r_to'] = array('#type' => 'textfield', '#default_value' => date('Y-m-d'), '#title' => t('To Date'),
+		'#attached' => array(
+      		'library' => array(
+        		array('system', 'ui.datepicker'),
+      	)),
+		'#size' => 15, '#weight' => 1.3);
+
+	$form['r_foreign'] = array('#type' => 'select', '#title' => t('Type'), 
+		'#options' => array('all' => t('Both'), 'local' => t('Local') , 'foreign' => t('Foreign') ), 
+		'#default_value' => 'all', '#weight' => 1.4 );
+
+/*	$form['r_category'] = array('#type' => 'select', '#title' => 'Category', 
+		'#options' => array('all' => 'All', 'general' => 'General', 'pagoda' => 'Pagoda', 'corpus' => 'Corpus' ), 
+		'#default_value' => 'all', '#weight' => 1.4 );
+*/
+        $cost_categories = array('all' => t('All') );
+        foreach (explode("\n", variable_get("cost_category", '')) as $v )
+           $cost_categories[ trim($v) ] = trim($v);
+        $form['r_category'] = array('#type' => 'select', '#title' => t('Category'),
+                '#options' => $cost_categories,
+                '#default_value' => 'all', '#weight' => 1.5 );
+
+	$form['r_type'] = array('#type' => 'select', '#title' => t('Type of Transaction'),  
+		'#options' => $txn_types, /*array('all' => t('All'), 'cash' => t('Cash'), 'cheque' => t('Cheque'), 'bank-transfer' => t('Bank Transfer'), 'card' => t('Credit/Debit Card') ),*/ 
+		'#default_value' => 'all', '#weight' => 1.6);
+
+
+	$form['r_course'] = array('#type' => 'select', '#title' => t('Course'),  
+		'#options' => $courses, 
+		'#default_value' => '', '#weight' => 2.1);
+
+	$form['r_receipt'] = array('#type' => 'textfield', '#title' => t('Receipt No'),  
+		'#description' => t('Only number without ER-'), '#size' => 15,
+		'#default_value' => '', '#weight' => 2.2);
+
+	$form['r_name'] = array('#type' => 'textfield', '#title' => t('Donor Name'),  
+		'#size' => 25,
+		'#attached' => array(
+      		'library' => array(
+        		array('system', 'ui.autocomplete'),
+      	)),
+		'#default_value' => '', '#weight' => 2.3);
+
+
+
+	$form['r_user'] = array('#type' => 'select', '#title' => t('Created By'),  
+		'#description' => '',
+		'#options' => $created_by,
+		'#default_value' => '', '#weight' => 2.4);
+
+
+	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
+	/*if ( user_access("fetch registration data") )
+		$form['sub2'] = array('#type' => 'submit', '#value' => t('Fetch Registration Data'), '#weight' => 6.2);
+	if ( user_access("process mail queue") )
+		$form['sub3'] = array('#type' => 'submit', '#value' => t('Process Email Queue'), '#weight' => 6.3);
+	*/
+
+	//$form['#redirect'] = 'donation-report-results';
+
+	if (isset($form_state['storage'], $form_state['storage']['r_from']))
+	{
+		$append = "";
+		if (user_access('access own donation') && (!user_access('administer donation')))
+		{
+			$append = " and d_createdBy='".$user->uid."'";
+		}
+		//drupal_set_message("I am called");
+		$data = $form_state['storage'];
+		//drupal_set_message(print_r($data,true));
+		$from = $data['r_from'];
+		$to = $data['r_to'];
+		$foreign = $data['r_foreign'];
+		$category = $data['r_category'];
+		$txn_type = $data['r_type'];
+		$course = $data['r_course'];
+		$receipt = str_replace( variable_get('receipt_prefix', ''), '' ,$data['r_receipt']);
+		$donor = $data['r_name'];
+		if ( isset($data['r_user']) )
+		   $r_user = $data['r_user'];
+		else
+		   $r_user = '';
+		
+		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2',d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', d.d_type as 'Txn Type', d.d_category as 'Category', 
+			CONCAT(d.d_id,'||',d.d_receipt) as 'Receipt No', 
+			don.d_id_no as 'Passport/ID No', 
+			 $txn_types_qry
+			/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
+			IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' or d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',
+			*/
+			d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  d.d_comment as 'Comment',
+			u.name as 'CreatedBy', d.d_created as 'Created On', CONCAT(ud.name, '||', d.d_deleted_date) as 'Extra'  
+			from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
+			left join dh_course c on d.d_course=c.c_id
+			left join users ud on d.d_deleted_by=ud.uid  
+			where d.d_id >0 ".$append ;
+			//where d.d_deleted=0 ".$append ;
+
+		if (($from <> '') )  // &&  (($course == 0) || ($course == '')) ) 
+			$q .= " and d.d_date >= '$from' ";
+		if (($to <> '') ) //  && (($course == 0) || ($course == '') ) )
+			$q .= " and d.d_date <= '$to' ";
+
+		switch ($foreign) 
+		{
+			case 'local':
+				$q .= " and d.d_foreign=0 ";
+				break;	
+			case 'foreign':
+				$q .= " and d.d_foreign=1 ";
+				break;	
+		}
+
+
+		if ($category <> 'all')
+			$q .= " and d.d_category = '$category' ";
+
+		if ($txn_type <> 'all')
+			$q .= " and d.d_type = '$txn_type' ";
+
+		if ($course <> '')
+			$q .= " and d.d_course = '$course' ";
+
+		if ($receipt <> '')
+			$q .= " and d.d_id = '$receipt' ";
+		
+		if ($donor <> '')
+			$q .= " and don.d_name = '$donor' ";
+
+
+		if ($r_user <> '')
+			$q .= " and d.d_createdBy = '$r_user' ";
+
+
+		$q .= " order by d.d_created DESC";
+
+		$result = db_query($q);
+		//drupal_set_message($q);
+
+		if ($result->rowCount() <= 0)
+			$form['out'] = array('#markup' => '<div class="report-status"><h2>'.t('No transactions found').'!</h2></div>', '#weight' => 100);
+		else
+		{
+			$total_recs = $result->rowCount();
+			$headers_done = false;
+			$rows = array();
+			while ( $row = $result->fetchAssoc() ) 
+			{
+				if (! $headers_done )
+				{
+					$headers = array_keys($row);
+					$headers_done = true;
+				}
+				$vals = array_values($row);
+				$temp = explode("||", $row['Receipt No']);
+				if ( isset($temp[1]) && ($temp[1] <> ''))
+				{
+					$a = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
+					$row['Receipt No'] = l($a, file_create_url($temp[1]), 
+						array('attributes' => array('class' => array('receipt-file'), 'data-title' => $a )));
+
+				}
+				else
+					$row['Receipt No'] = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
+				$temp = explode("||", $row['Action 1']);
+				$row_deleted = $temp[2];
+				if (user_access('edit own donation') || user_access('administer donation'))
+				{
+					if (($temp[1] == 0) && (!$row_deleted))
+						$row['Action 1'] = l(t("Edit"), "donation/edit/".$temp[0]);
+					else
+						$row['Action 1'] = t('Synced');					
+				}
+				else
+					$row['Action 1'] = t('No Access');
+
+				$temp = explode("||", $row['Action 2']);
+				if (user_access('delete transaction') || user_access('administer donation'))
+				{
+					if (($temp[1] == 0) && (!$row_deleted))
+						$row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], array('attributes' => array('class' => array('delete-transaction') ) ) );
+					else
+						$row['Action 2'] = t('Synced');					
+				}
+				else
+					$row['Action 2'] = t('No Access');
+
+
+				$temp = explode("||", $row['First Name']);
+				$tt = explode(" ", $temp[0]);
+				if ( isset($temp[1]) && ($temp[1] <> '') )
+				{
+					$row['First Name'] = l($tt[0], file_create_url($temp[1]), 
+						array('attributes' => array('class' => array('address-proof'), 'data-title' => $temp[0] )));
+				}
+				else
+					$row['First Name'] = $tt[0];
+
+				$temp = explode("||", $row['Last Name']);
+				if ( isset($temp[1]) && ($temp[1] <> '') )
+				{
+					$row['Last Name'] = l($tt[1], file_create_url($temp[1]), 
+						array('attributes' => array('class' => array('address-proof'), 'data-title' => $temp[0] )));
+				}
+				else
+					$row['Last Name'] = $tt[1];
+
+				if ( $row['Course'] == '' )
+					$row['Course'] = 'Non Course';
+
+				if ( $row_deleted )
+				{
+					$t = explode("||", $row['Extra']);
+					$row['Extra'] = "Deleted by ".$t[0]." on ".$t[1];
+				}
+				else
+					$row['Extra'] = '';
+
+                foreach( $txn_types_totals as $t )
+                {
+                        if ( ! isset($totals[ $t ][$row['Currency']]) )
+                                $totals[ $t ][$row['Currency']] = 0;
+                        if ( ! $row_deleted )
+                            $totals[ $t ][$row['Currency']] += $row[ $t ];
+                }
+				
+				/*if ( ! isset($totals['Cash'][$row['Currency']]) )
+					$totals['Cash'][$row['Currency']] = 0;
+				if ( ! isset($totals['Cheque'][$row['Currency']]) )
+					$totals['Cheque'][$row['Currency']] = 0;
+				if ( ! isset($totals['Card'][$row['Currency']]) )
+					$totals['Card'][$row['Currency']] = 0;
+				if ( ! isset($totals['Bank Transfer'][$row['Currency']]) )
+					$totals['Bank Transfer'][$row['Currency']] = 0;
+				
+				$totals['Cash'][$row['Currency']] += $row['Cash'];
+				$totals['Cheque'][$row['Currency']] += $row['Cheque'];
+				$totals['Card'][$row['Currency']] += $row['Card'];
+				$totals['Bank Transfer'][$row['Currency']] += $row['Bank Transfer'];
+				*/
+                if ( $row_deleted )
+                    $rows[] = array('data' => $row, 'class' => array('deleted'));
+                else
+                    $rows[] = $row;			
+			}
+			$row = array();
+			$grand_total = array();
+			foreach( $headers as $v )
+			{
+				if( in_array($v,$txn_types_totals) )    /// array('Cash','Cheque','Card', 'Bank Transfer')))
+				{
+					$temp = '';
+					foreach($totals[$v] as $cur => $tot)
+					{
+						if ($tot > 0)
+						{
+							$temp .= number_format($tot).' '.$cur.'<br>';
+							if ( !isset($grand_total[ $cur ]) )
+							   $grand_total[ $cur ] = 0;
+							$grand_total[ $cur ] += $tot;
+						}
+					}
+					$row[] = $temp;
+				}
+				else
+					$row[] = '';
+			}
+			$rows[] = $row;
+			$temp = '';
+			foreach( $grand_total as $cur => $total )
+			   $temp .= number_format($total).' '.$cur.'<br>';
+			
+			$out = '<div class="report-status"><h2>'.$total_recs.t(' transactions(s) found').'!</h2></div>';
+			$out .= '<h4>'.l(t("Download as Excel"), "donation-report/excel", 
+				array('query' => array('start' => $from, 'end' => $to, 'foreign' => $foreign, 'category' => $category, 'txn_type' => $txn_type, 
+							'course' => $course, 'name' => $donor, 'receipt' => $receipt, 'user' => $r_user)) ).'</h4>';
+			$out .= theme('table',array('header' => $headers, 'rows' => $rows));
+			$out .= '<div style="text-align: center"><h2> '.t('Grand Total').': '.$temp.'</h2></div>';
+			//drupal_set_message($out);
+			$form['out'] = array('#markup' => $out, '#weight' => 100 );
+			
+		}		
+	}
+	$js = '
+	(function ($) {
+		$(document).ready(function(){
+			$("#edit-r-from,#edit-r-to").datepicker({dateFormat: "yy-mm-dd", minDate: "-10Y", maxDate: 0});
+
+		        $("a.receipt-file").unbind("click");			
+			$("a.receipt-file").on("click", function(e){
+
+				e.preventDefault();
+				var src = $(this).attr("href");
+	  			var left = (screen.width/2)-400;
+	  			var top = (screen.height/2)-250;
+				var pdf = window.open(src, "pdfwindow", "width=800, height=500, left="+left+", top="+top+", resizable=0");	        		
+			});
+
+
+		        $("a.address-proof").unbind("click");			
+			$("a.address-proof").on("click", function(e){
+
+				e.preventDefault();
+				var src = $(this).attr("href");
+	  			var left = (screen.width/2)-400;
+	  			var top = (screen.height/2)-350;
+				var pdf = window.open(src, "pdfwindow", "width=800, height=700, left="+left+", top="+top+", resizable=0");	        		
+			});
+
+			$("#edit-r-name").autocomplete({
+				source: function( request, response ) {
+			        $.ajax({
+			          url: "/autocomplete/get-donors/" + request.term,
+			          dataType: "json",
+			          success: function( data ) {
+			            response( data );
+			          }
+			        });
+				},
+      			minLength: 1,
+			});
+			
+			$("a.delete-transaction").unbind("click");
+			$("a.delete-transaction").on( "click", function(e){
+				return confirm("Are you sure you want to cancel the transaction?");
+			});
+
+		});
+
+	})(jQuery);
+	';
+	drupal_add_js($js, 'inline');
+	return $form;
+}
+
+function donation_report_form_submit($form, &$form_state)
+{
+	if ( $form_state['input']['op'] == 'Fetch Registration Data' )
+	{
+	   // drupal_set_message("Synced to Tally");
+	    //chdir("/dhamma/web/domains/donation");
+	    //exec("nohup /usr/bin/php dump-to-tally.php &");
+	}
+	elseif ( $form_state['input']['op'] == 'Process Email Queue' )
+	{
+	    drupal_set_message("Email Queue Processed");
+	    process_mail_queue();
+	    //chdir("/dhamma/web/domains/donation");
+	    //exec("nohup /usr/bin/php dump-to-tally.php &");
+	}
+	else
+	{
+	    $form_state['storage'] = $form_state['input'];
+	    $form_state['rebuild'] = TRUE;
+	}
+//	drupal_goto("donation-report-results", array('query' => $data));
+}
+
+function donation_report_xls()
+{
+	require_once(drupal_get_path('module','donation')."/Classes/PHPExcel.php");
+	$start = $_REQUEST['start'];
+	$end = $_REQUEST['end'];
+	$category = $_REQUEST['category'];
+	$txn_type = $_REQUEST['txn_type'];
+	$foreign = $_REQUEST['foreign'];
+	$course = $_REQUEST['course'];
+	$receipt = str_replace( variable_get('receipt_prefix', ''), '' ,$_REQUEST['receipt']);
+	$donor = $_REQUEST['name'];
+	$r_user = $_REQUEST['user'];
+
+	$append = "";
+	if (user_access('access own donation') && (!user_access('administer donation')))
+	{
+		$append = " and d_createdBy='".$user->uid."'";
+	}
+
+	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', d.d_type as 'Txn Type', d.d_category as 'Category', 
+		d.d_id as 'Receipt No', 
+		don.d_id_no as 'Passport/ID', 
+		IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
+		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',
+		d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  d.d_comment as 'Comment',
+		u.name as 'CreatedBy'  , d.d_created as 'Created On' 
+		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
+		left join dh_course c on d.d_course=c.c_id 
+		where  d.d_deleted=0 ".$append ;
+
+	if ( ($start <> ''))   // && ($course == ''))
+		$q .= " and d.d_date >= '$start' ";
+	if ( ($end <> '') )     //&& ($course == ''))
+		$q .= " and d.d_date <= '$end' ";
+
+	switch ($foreign) 
+	{
+		case 'local':
+			$q .= " and d.d_foreign=0 ";
+			break;	
+		case 'foreign':
+			$q .= " and d.d_foreign=1 ";
+			break;	
+	}
+
+
+	if ($category <> 'all')
+		$q .= " and d.d_category = '$category' ";
+
+	if ($txn_type <> 'all')
+		$q .= " and d.d_type = '$txn_type' ";
+
+	if ($course <> '')
+		$q .= " and d.d_course = '$course' ";
+
+	if ($receipt <> '')
+		$q .= " and d.d_id = '$receipt' ";
+	
+	if ($donor <> '')
+		$q .= " and don.d_name = '$donor' ";
+
+
+	if ($r_user <> '')
+		$q .= " and d.d_createdBy = '$r_user' ";
+
+
+	$q .= " order by d.d_created DESC";
+
+	$result = db_query($q);
+	//drupal_set_message($q);
+
+	$xls = new PHPExcel();
+	$xls->setActiveSheetIndex(0);
+	$xls->getActiveSheet()->setTitle('New Sheet');
+   	$filename = "Donation-Report-".$start."-to-".$end.".xls";
+
+	if ($result->rowCount() > 0)
+	{
+		$total_recs = $result->rowCount();
+		$headers_done = false;
+		$rows = array();
+		$line = 2;
+		while ( $row = $result->fetchAssoc() ) 
+		{
+			if (! $headers_done )
+			{
+				$headers = array_keys($row);
+				$headers_done = true;
+				$xls->getActiveSheet()->fromArray($headers, NULL, 'A1');
+			}
+			$row['Receipt No'] = variable_get('receipt_prefix', '').str_pad($row['Receipt No'], 7, "0", STR_PAD_LEFT);
+
+			if ( $row['Course'] == '' )
+				$row['Course'] = 'Non Course';
+
+			$temp = explode(" ", $row['First Name']);
+			$row['First Name'] = $temp[0];
+			$row['Last Name'] = $temp[1];
+
+			if ( ! isset($totals['Cash'][$row['Currency']]) )
+				$totals['Cash'][$row['Currency']] = 0;
+			if ( ! isset($totals['Cheque'][$row['Currency']]) )
+				$totals['Cheque'][$row['Currency']] = 0;
+			if ( ! isset($totals['Card'][$row['Currency']]) )
+				$totals['Card'][$row['Currency']] = 0;
+			if ( ! isset($totals['Bank Transfer'][$row['Currency']]) )
+				$totals['Bank Transfer'][$row['Currency']] = 0;
+
+			$totals['Cash'][$row['Currency']] += $row['Cash'];
+			$totals['Cheque'][$row['Currency']] += $row['Cheque'];
+			$totals['Card'][$row['Currency']] += $row['Card'];
+			$totals['Bank Transfer'][$row['Currency']] += $row['Bank Transfer'];
+
+
+			$vals = array_values($row);
+			$xls->getActiveSheet()->fromArray($vals,NULL, 'A'.$line);
+			$line++;
+		}
+		$row = array();
+		$grand_total = array();
+		foreach( $headers as $v )
+		{
+			if( in_array($v, array('Cash','Cheque','Card', 'Bank Transfer')))
+			{
+				$temp = '';
+				foreach($totals[$v] as $cur => $tot)
+				{
+					if ($tot > 0)
+					{
+						$temp .= number_format($tot).' '.$cur."\n";
+                                                if ( !isset($grand_total[ $cur ]) )
+                                                     $grand_total[ $cur ] = 0;
+                                                 $grand_total[ $cur ] += $tot;
+					}
+				}
+				$row[] = $temp;
+			}
+			else
+				$row[] = NULL;
+		}
+		$temp = '';
+		foreach( $grand_total as $cur => $total )
+		   $temp .= number_format($total).' '.$cur."\n";
+		$xls->getActiveSheet()->fromArray($row,NULL, 'A'.$line);
+		$xls->getActiveSheet()->setCellValue('F'.($line+1), 'Grand Total:');
+		$xls->getActiveSheet()->setCellValue('G'.($line+1), trim($temp));
+		//$line++;
+
+	}
+	else
+		$xls->getActiveSheet()->setCellValue('A1', 'No Transactions Found!');
+
+	//$objWriter->save();
+
+	/* Formatting Excel */
+	$xls->getActiveSheet()->getColumnDimension('A')->setWidth(10);
+	$xls->getActiveSheet()->getColumnDimension('B')->setWidth(9);
+	$xls->getActiveSheet()->getColumnDimension('C')->setWidth(10);
+	$xls->getActiveSheet()->getColumnDimension('D')->setWidth(10);
+	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(9);
+	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('I:L')->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension('M:N')->setWidth(3);
+	$xls->getActiveSheet()->getColumnDimension('O')->setWidth(7);
+
+	$header = array('font' => array('bold' => true));
+	$xls->getActiveSheet()->getStyle('A1:R1')->applyFromArray($header);
+
+	$style_amount = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT));
+	$xls->getActiveSheet()->getStyle('G2:M'.$line)->applyFromArray($style_amount);
+
+	$style_total = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT), 'font' => array('bold' => true));
+	$xls->getActiveSheet()->getStyle('A'.$line.':M'.$line)->applyFromArray($style_total);
+	$xls->getActiveSheet()->getStyle('A'.$line.':M'.$line)->getAlignment()->setWrapText(true);
+	$xls->getActiveSheet()->getRowDimension(($line))->setRowHeight(50);
+
+	$style_grand_total = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT), 'font' => array('bold' => true, 'size' => 15));
+	$xls->getActiveSheet()->getStyle('F'.($line+1).':G'.($line+1))->applyFromArray($style_grand_total);
+	$xls->getActiveSheet()->getStyle('G'.($line+1))->getAlignment()->setWrapText(true);
+	$xls->getActiveSheet()->getRowDimension(($line+1))->setRowHeight(50);
+	$xls->getActiveSheet()->mergeCells('G'.($line+1).':I'.($line+1));
+
+	$styleArray = array(
+	    'font' => array(
+	        'bold' => true,
+	    ),
+	    'alignment' => array(
+	        'horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT,
+	    ),
+	    'borders' => array(
+	        'top' => array(
+	            'style' => PHPExcel_Style_Border::BORDER_THIN,
+	        ),
+	    ),
+	    'fill' => array(
+	        'type' => PHPExcel_Style_Fill::FILL_GRADIENT_LINEAR,
+	        'rotation' => 90,
+	        'startcolor' => array(
+	            'argb' => 'FFA0A0A0',
+	        ),
+	        'endcolor' => array(
+	            'argb' => 'FFFFFFFF',
+	        ),
+	    ),
+	);
+
+
+
+	header('Content-Type: application/vnd.ms-excel');
+	header('Content-Disposition: attachment;filename="'.$filename.'"');
+	header('Cache-Control: max-age=0');
+	// If you're serving to IE 9, then the following may be needed
+	//header('Cache-Control: max-age=1');
+
+	// If you're serving to IE over SSL, then the following may be needed
+	header ('Expires: Mon, 26 Jul 1997 05:00:00 GMT'); // Date in the past
+	header ('Last-Modified: '.gmdate('D, d M Y H:i:s').' GMT'); // always modified
+	header ('Cache-Control: cache, must-revalidate'); // HTTP/1.1
+	header ('Pragma: public'); // HTTP/1.0
+
+	$objWriter = PHPExcel_IOFactory::createWriter($xls, 'Excel5');
+	$objWriter->save('php://output');	
+}
+
+?>

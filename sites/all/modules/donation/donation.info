@@ -1,0 +1,6 @@
+; $Id$
+name = Vipassana Centre Donation
+description = Donation for Dhamma Centres
+core = 7.x
+package = "Dhamma"
+version = "0.1"

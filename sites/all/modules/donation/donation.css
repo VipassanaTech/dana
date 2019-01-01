@@ -1,0 +1,41 @@
+.form-item-d-ref-no,.form-item-d-bank,.form-item-d-branch,.form-item-d-chq-date,.form-item-d-amount,.form-item-d-currency,.form-item-d-name,
+.form-item-d-id-no,.form-item-d-country,.form-item-d-state,.form-item-d-city,.form-item-d-contact,.form-item-d-pincode,
+.form-item-d-course,.form-item-d-email,.form-item-d-date,.form-item-d-foreign,.form-item-d-date,.form-item-d-gender,
+.form-item-r-from,.form-item-r-to,.form-item-r-foreign,.form-item-r-category,.form-item-r-type,
+.form-item-d-type,.form-item-d-category,.form-item-r-name,.form-item-r-course,.form-item-r-receipt, .form-item-r-name, .form-item-r-user,
+.form-item-d-tax-payer{
+	float: left; 
+	margin-right: 25px;
+}
+
+.form-item-d-name,.form-item-d-country,.form-item-d-contact,.form-item-d-date,.form-item-d-amount,
+.form-item-r-course,.form-item-d-comment, .form-item-d-name, .form-item-d-tax-payer { clear: left;}
+
+#edit-chequecardbank-transfer,.form-item-d-address{
+	clear: both;
+}
+
+.form-item-d-tax-payer {display:  inline;} 
+
+.form-item-d-tax-payer { clear: left;}
+
+.form-item-d-category { margin-left: 10px; }
+
+.form-submit { float: left ; }
+#edit-sub1 { clear: left;}
+.report-status { clear: both;}
+
+/*
+.grid-item { width: 28%; height: 75px; float: left; background: #e6e5e4; border: 2px solid #b6b5b4; }
+.grid-item-big { width: 90%;}
+.grid-item-medium { width: 60%;}
+*/
+
+.ui-autocomplete-loading {
+    background: white url("/misc/throbber-active.gif") right center no-repeat;
+  }
+
+.deleted {
+   text-decoration: line-through;
+   font-weight: bold;
+}

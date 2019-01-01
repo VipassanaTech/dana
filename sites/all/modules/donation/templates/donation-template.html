@@ -1,0 +1,194 @@
+<html>
+<head>
+<style type="text/css">
+
+.box {
+	height: 550px;
+	width: 875px;
+	margin: 0 auto;
+	position: relative;
+}
+
+.box-inside{
+	width: 100%;
+	height: 100%;
+	border-style: solid;
+	border-width:  2px;
+	border-top: none;
+	position: absolute;
+	top: 45px;
+}
+
+.top-left,.bottom-left { margin-left: 10px; margin-top: 8px;}
+.top-right { margin-right: 5px; margin-top: 8px;}
+.bottom-left { margin-bottom: -5px;}
+
+.top-left,.top-right {
+	padding: 0;
+	top:45px;
+	position: absolute;
+}
+.bottom-left,.bottom-right {
+	padding: 0;
+	position: absolute;
+	bottom: -45px;
+}
+
+.bottom-left { 	left:0; }
+.bottom-right { right:0; }
+.top-left,.bottom-left{ float: left; }
+.top-right,.bottom-right { right:0;}
+
+.logo {
+	margin: 0 auto;
+	top: 0;
+
+}
+.center {width: 100%; margin: 0 auto; text-align: center;}
+
+.top-border-div-left {width: 32%; border-style: solid; border-width: 1px;float: left;}
+.top-border-div-right {width: 35%; border-style: solid; border-width: 1px;float: right;}
+
+.header {width: 100%; margin: 0 auto; text-align: center; margin-top: 50px;}
+.header h1 {font-family: 'Times New Roman'; font-size: 35px; font-weight: bold;  margin-bottom: 0; padding-bottom: 0}
+.header h2 {font-family: 'Times New Roman'; font-size: 17px; margin-top: 0; margin-bottom: 0; padding-bottom: 0}
+.header h3 {font-family: 'Arial'; font-size: 14px; font-style: bold; margin-top: 0;margin-bottom: 0; padding-bottom: 0}
+h4 {font-family: 'Arial'; font-size: 14px; font-style: normal; font-weight: normal; margin-top: 5px; margin-bottom: 2px}
+h5 {font-family: 'Arial'; font-size: 12px; font-style: normal; font-weight: normal; margin-top: 5px; margin-bottom: 2px}
+
+.main {display: block; clear: both; height: 175px;}
+.footer{width: 100%; margin: 0 auto; text-align: center; margin-top: 20px; }
+.left-sign {float: left; margin-left: 140px; font-style: italic;}
+.right-sign{float: right;margin-right: 130px; font-style: italic;}
+.left-receipt-no {float: left; margin-left: 100px; font-size: 17px; font-family: 'Arial'; margin-top: 5px; margin-bottom: 5px; float: left} 
+.right-date{float: right;margin-right: 100px; font-size: 17px; font-family: 'Arial'; margin-top: 5px;margin-bottom: 5px; }
+.impact { font-size: 18px; font-family: 'Arial'; font-weight: bold; display: inline; }
+hr {margin: 0 70px 0 70px; padding: 0; height: 1px; border:0; border-top: 1px solid #000000; }
+.content {display: block; clear: both; margin-left: 100px; margin-top: 22px; font-family: 'Arial'; line-height: 30px; margin-bottom: 20px; margin-top: 10px;}
+.second { margin-top: 125px;}
+.left {float: left; }
+.right {float: right; margin-right: 100px;}
+.small { font-size: 13px; font-style: italic; font-wieght: normal; display: inline;}
+.smaller { font-size: 12px; font-style: italic; font-wieght: normal; display: inline;}
+.smallest { font-size: 10px; font-style: italic; font-wieght: normal; display: inline;}
+.underline { text-decoration: underline; display: inline;}
+.name-small { font-size: 13px; display: inline;}
+.whose-copy{float: left; width: 40%; text-decoration: underline; font-size: 12px; }
+
+</style>
+</head>
+<body>
+  <div class="box">
+  	<img class="top-left" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/top-left.png">
+  	<img class="top-right" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/top-right.png">
+  	<img class="bottom-left" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/bottom-left.png">
+  	<img class="bottom-right" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/bottom-right.png">
+  	<div class="center">
+  		<img class="logo" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/vri_logo.png">
+  	</div>
+  	<div class="box-inside">
+  		<div class="top-border-div-left"></div>
+  		<div class="top-border-div-right"></div>
+  		<div class="header">
+  			<h1>DHAMMA VIPULA</h1>
+  			<h2>SAYAGYI U BA KHIN MEMORIAL TRUST</h2>
+  			<h3>Trust Regn. No. E - 4781 (Bom)</h3>
+  			<h4>Plot No 91-A, Sector - 26, Parsik Hill, CDB Belapur, Navi Mumbai - 400 614.<br>
+  			Tel.:(+91) 22-27522277 Mob: (+91) 93200 19666  Email: dhammavipula@gmail.com</h4>
+  			<hr>
+  			<h4><b>Regd Office:</b> Green House, 2nd Floor, Green Street, Fort, Mumbai - 400 023. Tel: +91 22-2266 4039</h4>
+  			<hr>
+  		</div>
+  		<div class="main">
+  			<div class="left-receipt-no">
+  				Receipt No: <div class="impact">[receipt-no]</div>
+  			</div>
+  			<div class="right-date">
+  				Date: <div class="impact">[receipt-date]</div>
+  			</div>
+  			<div class="content">
+  				Received with thanks from <b>[donor-name]</b><br>
+  				Address: [donor-address]<br>
+  				Sum of <b>[currency] [amount]/-</b> In Words( <b><div class="small">[amount-words] only</div></b> )<br>
+  				By <b><div class="underline">[type]</div></b>  <div class="small">[on-bank] [ref-no]</div>&nbsp;&nbsp;as donation on account of <b>[category]</b><br>
+  				<div class="left">[pan-or-passport]: <b>[id-no]</b></div> <div class="right">Contact No: <b>[contact]</b></div> 
+
+  			</div>
+  		</div>
+  		<div class="footer">
+  			<h5><i>I/We hereby confirm that, I/We donate above amount to your trust with specific direction that said donation shall [not-corpus]form part of corpus<br>
+  				of the trust within the meaning of provision of Sec 12 of the Income Tax Act 1961 and Section 58 of the Bombay Public Trust Act 1950.<br>
+  				<b>Note:</b> The validity of the below mentioned renewal order is Extended Perpetually as per finance (No. 2) Act, 2009<br>
+  				by deleting proviso to Sec 80G(5)(vi) of Income Tax Act,1961</i></h5>
+  			<h4>IT Exemption No. DIT (E) MC/80G/1788/2007/2007-08 dt. 21-06-2007   PAN NO: AAATT0114E</h4>
+			<h5>12AA Regn. No: 24544 dt. 22-08-1985</h5>
+  			<div class="left-sign"><br>
+  				...........................<br>
+  				Receiver's Signature
+  			</div>
+			<div class="whose-copy"><br><br>Donor Copy</div>
+  			<div class="right-sign"><br>
+  				...........................<br>
+  				Donor's Signature
+  			</div>
+  		</div>
+  	</div>
+  </div>
+  <div class="box second">
+  	<img class="top-left" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/top-left.png">
+  	<img class="top-right" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/top-right.png">
+  	<img class="bottom-left" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/bottom-left.png">
+  	<img class="bottom-right" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/bottom-right.png">
+  	<div class="center">
+  		<img class="logo" src="file:///dhamma/web/apps/drupal-7.43/sites/all/modules/donation/templates/vri_logo.png">
+  	</div>
+  	<div class="box-inside">
+  		<div class="top-border-div-left"></div>
+  		<div class="top-border-div-right"></div>
+  		<div class="header">
+  			<h1>DHAMMA VIPULA</h1>
+  			<h2>SAYAGYI U BA KHIN MEMORIAL TRUST</h2>
+  			<h3>Trust Regn. No. E - 4781 (Bom)</h3>
+  			<h4>Plot No 91-A, Sector - 26, Parsik Hill, CDB Belapur, Navi Mumbai - 400 614.<br>
+  			Tel.:(+91) 22-27522277 Mob: (+91) 93200 19666  Email: dhammavipula@gmail.com</h4>
+  			<hr>
+  			<h4><b>Regd Office:</b> Green House, 2nd Floor, Green Street, Fort, Mumbai - 400 023. Tel: +91 22-2266 4039</h4>
+  			<hr>
+  		</div>
+  		<div class="main">
+  			<div class="left-receipt-no">
+  				Receipt No: <div class="impact">[receipt-no]</div>
+  			</div>
+  			<div class="right-date">
+  				Date: <div class="impact">[receipt-date]</div>
+  			</div>
+  			<div class="content">
+  				Received with thanks from <b>[donor-name]</b><br>
+  				Address: [donor-address]<br>
+  				Sum of <b>[currency] [amount]/-</b> In Words( <b><div class="small">[amount-words] only</div></b> )<br>
+  				By <b><div class="underline">[type]</div></b>  <div class="small">[on-bank] [ref-no]</div> &nbsp;&nbsp;as donation on account of <b>[category]</b><br>
+  				<div class="left">[pan-or-passport]: <b>[id-no]</b></div> <div class="right">Contact No: <b>[contact]</b></div> 
+
+  			</div>
+  		</div>
+  		<div class="footer">
+  			<h5><i>I/we hereby confirm that, I/We donate above amount to your trust with specific direction that said donation shall [not-corpus]form part of corpus<br>
+  				of the trust within the meaning of provision of Sec 12 of the Income Tax Act 1961 and Section 58 of the Bombay Public Trust Act 1950.<br>
+  				<b>Note:</b> The validity of the below mentioned renewal order is Extended Perpetually as per finance (No. 2) Act, 2009<br>
+  				by deleting proviso to Sec 80G(5)(vi) of Income Tax Act,1961</i></h5>
+  			<h4>IT Exemption No. DIT (E) MC/80G/1788/2007/2007-08 dt. 21-06-2007   PAN NO: AAATT0114E</h4>
+			<h5>12AA Regn. No: 24544 dt. 22-08-1985</h5>
+  			<div class="left-sign"><br>
+  				...........................<br>
+  				Receiver's Signature
+  			</div>
+			<div class="whose-copy"><br><br>Office Copy</div>
+  			<div class="right-sign"><br>
+  				...........................<br>
+  				Donor's Signature
+  			</div>
+  		</div>
+  	</div>
+  </div>
+</body>
+</html>

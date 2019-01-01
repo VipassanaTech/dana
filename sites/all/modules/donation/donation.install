@@ -1,0 +1,33 @@
+<?php
+
+function donation_schema()
+{
+	$schema['dh_donation'] = array(
+ 	 'fields' => array(
+				   'd_id' => array('type' => 'serial',  'not null' => TRUE ),
+				   'd_type' => array('type' => 'varchar', 'length' => 20,  'not null' => TRUE, 'default' => ''),
+				   'd_foreign' => array('type' => 'char', 'length' => 1,  'not null' => TRUE, 'default' => 0 ),
+				   'd_donor' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0 ),				   
+				   'd_amount' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0 ),
+				   'd_currency' => array('type' => 'varchar', 'length' => 10, 'not null' => TRUE, 'default' => '' ),
+				   'd_date' => array('mysql_type' => 'date' ),
+				   'd_ref_no'  => array('type' => 'varchar', 'length' => 40,  'not null' => TRUE, 'default' => ''),
+				   'd_bank'  => array('type' => 'varchar', 'length' => 60,  'not null' => TRUE, 'default' => ''),
+				   'd_branch'  => array('type' => 'varchar', 'length' => 40,  'not null' => TRUE, 'default' => ''),
+   				   'd_course' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0),
+				   'd_comment' => array('type' => 'varchar', 'length' => 255,  'not null' => TRUE, 'default' => '' ),
+				   'd_deleted' => array('type' => 'char', 'length' => 1, 'not null' => TRUE, 'default' => 0),
+				   'd_lastupdated' => array('mysql_type' => 'datetime'),
+				   'd_updatedby' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0),
+				   'd_created' => array('mysql_type' => 'datetime'),
+				   'd_createdby' => array('type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0),
+            ),
+      'indexes' => array( 'txn_date' => array('d_date')),
+      'primary key' => array('d_id')
+
+    );
+
+    return $schema;
+}
+
+?>
