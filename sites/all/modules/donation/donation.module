@@ -1889,8 +1889,7 @@ function donation_report_xls()
             {
                     if ( ! isset($totals[ $t ][$row['Currency']]) )
                             $totals[ $t ][$row['Currency']] = 0;
-                    if ( ! $row_deleted )
-                        $totals[ $t ][$row['Currency']] += $row[ $t ];
+                    $totals[ $t ][$row['Currency']] += $row[ $t ];
             }
 
 			/*if ( ! isset($totals['Cash'][$row['Currency']]) )
