@@ -1787,6 +1787,17 @@ function donation_report_xls()
 	$donor = $_REQUEST['name'];
 	$r_user = $_REQUEST['user'];
 
+	$txns = explode("\n", variable_get('txn_types', ""));
+    $txn_types_qry = '';
+    $txn_types_totals = array();
+	foreach ($txns as $v) 
+	{
+		$t = explode("=", $v);
+	    $txn_types_totals[] = trim($t[1]);
+        $txn_types_qry .= "IF(d.d_type='".trim($t[0])."',d.d_amount,'') as '".trim($t[1])."', ";
+	}
+
+
 	$append = "";
 	if (user_access('access own donation') && (!user_access('administer donation')))
 	{
@@ -1796,8 +1807,9 @@ function donation_report_xls()
 	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', d.d_type as 'Txn Type', d.d_category as 'Category', 
 		d.d_id as 'Receipt No', 
 		don.d_id_no as 'Passport/ID', 
-		IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
-		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',
+		$txn_types_qry
+		/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
+		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',*/
 		d.d_ref_no as 'Ref No', d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  d.d_comment as 'Comment',
 		u.name as 'CreatedBy'  , d.d_created as 'Created On' 
 		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
@@ -1873,7 +1885,15 @@ function donation_report_xls()
 			$row['First Name'] = $temp[0];
 			$row['Last Name'] = $temp[1];
 
-			if ( ! isset($totals['Cash'][$row['Currency']]) )
+            foreach( $txn_types_totals as $t )
+            {
+                    if ( ! isset($totals[ $t ][$row['Currency']]) )
+                            $totals[ $t ][$row['Currency']] = 0;
+                    if ( ! $row_deleted )
+                        $totals[ $t ][$row['Currency']] += $row[ $t ];
+            }
+
+			/*if ( ! isset($totals['Cash'][$row['Currency']]) )
 				$totals['Cash'][$row['Currency']] = 0;
 			if ( ! isset($totals['Cheque'][$row['Currency']]) )
 				$totals['Cheque'][$row['Currency']] = 0;
@@ -1886,7 +1906,7 @@ function donation_report_xls()
 			$totals['Cheque'][$row['Currency']] += $row['Cheque'];
 			$totals['Card'][$row['Currency']] += $row['Card'];
 			$totals['Bank Transfer'][$row['Currency']] += $row['Bank Transfer'];
-
+			*/
 
 			$vals = array_values($row);
 			$xls->getActiveSheet()->fromArray($vals,NULL, 'A'.$line);
@@ -1896,7 +1916,7 @@ function donation_report_xls()
 		$grand_total = array();
 		foreach( $headers as $v )
 		{
-			if( in_array($v, array('Cash','Cheque','Card', 'Bank Transfer')))
+			if( in_array($v, $txn_types_totals)) // array('Cash','Cheque','Card', 'Bank Transfer')
 			{
 				$temp = '';
 				foreach($totals[$v] as $cur => $tot)
@@ -1937,9 +1957,10 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(9);
 	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(12);
 	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('I:L')->setWidth(7);
-	$xls->getActiveSheet()->getColumnDimension('M:N')->setWidth(3);
-	$xls->getActiveSheet()->getColumnDimension('O')->setWidth(7);
+	$end = chr(ord('I')+count($txn_types_totals));
+	$xls->getActiveSheet()->getColumnDimension('I:'.$end)->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+1) )->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+2) )->setWidth(7);
 
 	$header = array('font' => array('bold' => true));
 	$xls->getActiveSheet()->getStyle('A1:R1')->applyFromArray($header);
