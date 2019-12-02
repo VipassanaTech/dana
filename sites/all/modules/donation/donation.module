@@ -1810,7 +1810,7 @@ function donation_report_xls()
 		$txn_types_qry
 		/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
 		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',*/
-		d.d_ref_no as 'Ref No', d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  d.d_comment as 'Comment',
+		CONCAT('#',d.d_ref_no) as 'Ref No', d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  d.d_comment as 'Comment',
 		u.name as 'CreatedBy'  , d.d_created as 'Created On' 
 		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
 		left join dh_course c on d.d_course=c.c_id 
