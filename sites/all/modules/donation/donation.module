@@ -105,6 +105,11 @@ function donation_menu()
 	       'access arguments' => array('access donation'),
 	       'type' => MENU_CALLBACK);
 
+	$items['admin/upload-csv'] = array( 'title' => t('Upload CSV'),
+	     'page arguments' => array('donation_upload_form'),
+	     'page callback' => 'drupal_get_form',
+	     'access arguments' => array('administer donation'));
+
 
 	return $items;
 }
@@ -608,7 +613,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
       	)),
 		'#required' => true, '#weight' => 3.1, '#default_value' => get_default('d_name',$edit_data, '') );
 
-	$form['d_id_no'] = array('#type' => 'textfield', '#size' => 20, '#title' => 'Pancard No', 
+	$form['d_id_no'] = array('#type' => 'textfield', '#size' => 20, '#title' => 'ID No', 
 		'#description' => 'Passport No for Foriegn Nationals','#weight' => 3.2, '#default_value' => get_default('d_id_no', $edit_data, '') );
 
 
@@ -2019,6 +2024,146 @@ function donation_report_xls()
 
 	$objWriter = PHPExcel_IOFactory::createWriter($xls, 'Excel5');
 	$objWriter->save('php://output');	
+}
+
+
+function donation_upload_form($form, &$form_state)
+{
+	$form['upload'] = array(
+	    '#type' => 'file',
+	    '#title' => t('CSV File'),
+	    '#description' => t('Course/Student data in CSV format'),
+	);
+	$form['submit'] = array('#type' => 'submit', '#value' => 'Upload');
+	$form['#attributes']['enctype'] = 'multipart/form-data';
+	return $form;
+}
+
+function donation_upload_form_validate($form, &$form_state)
+{
+	$file = file_save_upload('upload', array(
+		'file_validate_extensions' => array('csv'),
+	));
+	if ($file)
+	{
+		if ($file = file_move($file, 'private://')) {
+			$form_state['values']['upload'] = $file;
+		}
+		else {
+			form_set_error('upload', t('Failed to write the uploaded file the sites private folder.'));
+		}		
+	}
+}
+
+function donation_upload_form_submit($form, &$form_state)
+{
+	$file=$form_state['values']['upload'];
+	unset($form_state['values']['upload']);
+	$file->status = FILE_STATUS_PERMANENT;
+	file_save($file);
+	//$f = file_stream_wrapper_get_instance_by_uri('private://')->getDirectoryPath()."/".$file->filename;
+	$row = 1;
+	drupal_set_message(process_csv($file->uri));
+	//drupal_set_message("File is ".$file->filename);
+}
+
+function process_csv( $csv )
+{
+	$buffer = 100;
+	$processed = 0;
+	$row = 0;
+	//drupal_set_message("I am called $csv");
+	if (($handle = fopen($csv, "r")) !== FALSE) 
+	{
+		$courses = array();	
+		$students = array();
+	    	while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) 
+	    	{
+			$row++;
+			// Ignore first row
+	    		if ($row == 1)
+	    			continue;
+			if (count($data) < 12)
+				continue;
+			$courses[$data[0]."||".$data[1]] = $data[2];
+			$students[] = array( 'course' => $data[0]."||".$data[1], 'n' => $data[3], 'g' => $data[4], 'a' => $data[5], 'p' => $data[6], 'c' => $data[7], 
+				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11] );
+			if (($row % $buffer) == 0)
+			{
+				$processed += process_csv_array( $courses, $students );
+				$courses = array();
+				$students = array();
+			}
+	    	}
+	    	if ( count($students) > 0 )
+	    		$processed += process_csv_array( $courses, $students );
+	    fclose($handle);
+	    //drupal_set_message("$processed records processed");
+	    return "$processed records processed";
+	}	
+	else
+		//drupal_set_message("Unable to open file $csv");
+		return "Unable to open file $csv";
+}
+
+
+function process_csv_array($courses, $students)
+{
+	$count = 0;
+	$course_ids = array();
+	/* Fetch all course_ids, if not found then insert */
+	foreach($courses as $k => $end )
+	{
+		if (isset($course_ids[$k]))
+			continue;
+		$tmp = explode("||", $k);
+		if (count($tmp) < 2)
+			continue;
+		$ctype = $tmp[0];
+		$cstart = $tmp[1];
+		$q = "select c_id from dh_course where c_start='$cstart' and c_type='$ctype'";
+		$cid = db_query($q)->fetchField();
+		if ($cid)
+			$course_ids[$k] = $cid;
+		else
+		{
+			$cid = db_insert('dh_course')->fields(array('c_start' => $cstart, 'c_end' => $end, 'c_type' => $ctype))->execute();
+			$course_ids[$k] = $cid;
+		}
+	}
+	foreach( $students as $donor )
+	{
+		$name = addslashes($donor['n']);
+		$email = addslashes($donor['e']);
+		$contact = addslashes($donor['c']);
+		$cid = $course_ids[$donor['course']];
+		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact'";
+		$check_id = db_query($q)->fetchField();
+		if ($check_id)
+		{
+			if ($cid)
+				db_update('dh_donor')->fields(array('d_course' => $cid))->condition('d_id', $check_id)->execute();
+		}
+		else
+		{
+			$d = array();
+			$d['d_name'] = $donor['n'];
+			$d['d_gender'] = $donor['g'];
+			$d['d_address'] = $donor['a'];
+			$d['d_pincode'] = $donor['p'];
+			$d['d_contact'] = $donor['c'];
+			$d['d_email'] = $donor['e'];
+			$d['d_country'] = get_country($donor['co']);
+			$d['d_state'] = get_state($donor['st'], $d['d_country']);
+			$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
+			$d['d_course'] = $cid;
+			$d['d_id_no'] = '';
+			$d['d_occupation'] = '';
+			db_insert('dh_donor')->fields($d)->execute();
+		}
+		$count += 1;
+	}
+	return $count;
 }
 
 ?>
