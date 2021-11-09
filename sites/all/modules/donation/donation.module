@@ -1809,7 +1809,7 @@ function donation_report_xls()
 		$append = " and d_createdBy='".$user->uid."'";
 	}
 
-	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', d.d_type as 'Txn Type', d.d_category as 'Category', 
+	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', don.d_address as 'Address', d.d_type as 'Txn Type', d.d_category as 'Category', 
 		d.d_id as 'Receipt No', 
 		don.d_id_no as 'Passport/ID', 
 		$txn_types_qry
