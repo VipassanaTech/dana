@@ -1504,7 +1504,7 @@ function donation_report_form($form, &$form_state)
 		else
 		   $r_user = '';
 		
-		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2',d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', d.d_type as 'Txn Type', d.d_category as 'Category', 
+		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2',d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', d.d_address as 'Address', d.d_type as 'Txn Type', d.d_category as 'Category', 
 			CONCAT(d.d_id,'||',d.d_receipt) as 'Receipt No', 
 			don.d_id_no as 'Passport/ID No', 
 			 $txn_types_qry
