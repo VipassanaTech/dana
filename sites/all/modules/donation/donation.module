@@ -2139,26 +2139,26 @@ function process_csv_array($courses, $students)
 		$cid = $course_ids[$donor['course']];
 		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact'";
 		$check_id = db_query($q)->fetchField();
+		$d = array();
+		$d['d_name'] = $donor['n'];
+		$d['d_gender'] = $donor['g'];
+		$d['d_address'] = $donor['a'];
+		$d['d_pincode'] = $donor['p'];
+		$d['d_contact'] = $donor['c'];
+		$d['d_email'] = $donor['e'];
+		$d['d_country'] = get_country($donor['co']);
+		$d['d_state'] = get_state($donor['st'], $d['d_country']);
+		$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
+		$d['d_course'] = $cid;
+		$d['d_id_no'] = '';
+		$d['d_occupation'] = '';
 		if ($check_id)
 		{
 			if ($cid)
-				db_update('dh_donor')->fields(array('d_course' => $cid))->condition('d_id', $check_id)->execute();
+				db_update('dh_donor')->fields($d)->condition('d_id', $check_id)->execute();
 		}
 		else
 		{
-			$d = array();
-			$d['d_name'] = $donor['n'];
-			$d['d_gender'] = $donor['g'];
-			$d['d_address'] = $donor['a'];
-			$d['d_pincode'] = $donor['p'];
-			$d['d_contact'] = $donor['c'];
-			$d['d_email'] = $donor['e'];
-			$d['d_country'] = get_country($donor['co']);
-			$d['d_state'] = get_state($donor['st'], $d['d_country']);
-			$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
-			$d['d_course'] = $cid;
-			$d['d_id_no'] = '';
-			$d['d_occupation'] = '';
 			db_insert('dh_donor')->fields($d)->execute();
 		}
 		$count += 1;
