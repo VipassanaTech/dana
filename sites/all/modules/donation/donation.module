@@ -1958,12 +1958,12 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getColumnDimension('B')->setWidth(9);
 	$xls->getActiveSheet()->getColumnDimension('C')->setWidth(10);
 	$xls->getActiveSheet()->getColumnDimension('D')->setWidth(10);
-	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(7);
-	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(9);
-	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(12);
-	$end = chr(ord('I')+count($txn_types_totals)-1);
-	$xls->getActiveSheet()->getColumnDimension('I:'.$end)->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(15);
+	$end = chr(ord('K')+count($txn_types_totals)-1);
+	$xls->getActiveSheet()->getColumnDimension('K:'.$end)->setWidth(7);
 	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+1) )->setWidth(20);
 	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+2) )->setWidth(7);
 
