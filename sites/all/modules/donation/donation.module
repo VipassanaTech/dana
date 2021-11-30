@@ -1960,8 +1960,10 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getColumnDimension('D')->setWidth(10);
 	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(15);
 	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(12);
 	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension('I')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('J')->setWidth(15);
 	$end = chr(ord('K')+count($txn_types_totals)-1);
 	$xls->getActiveSheet()->getColumnDimension('K:'.$end)->setWidth(7);
 	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+1) )->setWidth(20);
@@ -1971,7 +1973,7 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getStyle('A1:R1')->applyFromArray($header);
 
 	$style_amount = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT));
-	$xls->getActiveSheet()->getStyle('G2:M'.$line)->applyFromArray($style_amount);
+	$xls->getActiveSheet()->getStyle('K2:M'.$line)->applyFromArray($style_amount);
 
 	$style_total = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT), 'font' => array('bold' => true));
 	$xls->getActiveSheet()->getStyle('A'.$line.':M'.$line)->applyFromArray($style_total);
