@@ -2083,11 +2083,11 @@ function process_csv( $csv )
 			// Ignore first row
 	    		if ($row == 1)
 	    			continue;
-			if (count($data) < 12)
+			if (count($data) < 13)
 				continue;
 			$courses[$data[0]."||".$data[1]] = $data[2];
 			$students[] = array( 'course' => $data[0]."||".$data[1], 'n' => $data[3], 'g' => $data[4], 'a' => $data[5], 'p' => $data[6], 'c' => $data[7], 
-				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11] );
+				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12] );
 			if (($row % $buffer) == 0)
 			{
 				$processed += process_csv_array( $courses, $students );
@@ -2150,7 +2150,7 @@ function process_csv_array($courses, $students)
 		$d['d_state'] = get_state($donor['st'], $d['d_country']);
 		$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
 		$d['d_course'] = $cid;
-		$d['d_id_no'] = '';
+		$d['d_id_no'] = $donor['i'];
 		$d['d_occupation'] = '';
 		if ($check_id)
 		{
