@@ -2138,6 +2138,8 @@ function process_csv_array($courses, $students)
 		$name = addslashes($donor['n']);
 		$email = addslashes($donor['e']);
 		$contact = addslashes($donor['c']);
+		$country = addslashes($donor['co']);
+		$state = addslashes($donor['st']);
 		$cid = $course_ids[$donor['course']];
 		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact'";
 		$check_id = db_query($q)->fetchField();
@@ -2148,8 +2150,8 @@ function process_csv_array($courses, $students)
 		$d['d_pincode'] = $donor['p'];
 		$d['d_contact'] = $donor['c'];
 		$d['d_email'] = $donor['e'];
-		$d['d_country'] = get_country($donor['co']);
-		$d['d_state'] = get_state($donor['st'], $d['d_country']);
+		$d['d_country'] = get_country($country);
+		$d['d_state'] = get_state($state, $country);
 		$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
 		$d['d_course'] = $cid;
 		$d['d_id_no'] = $donor['i'];
