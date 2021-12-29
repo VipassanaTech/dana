@@ -1357,7 +1357,9 @@ function get_city( $name, $state, $country )
    $q = "select c_id from dh_city where c_country='$country' and c_state='$state' and c_city='$name' limit 1";
    $city_id = db_query($q)->fetchField();
    if ($city_id == '')
-   	  $city_id = 0;
+   {
+   	  $city_id = db_insert('dh_city')->fields(array('c_country' => $country, 'c_state' => $state, 'c_city' => $name))->execute();
+   }
    return $city_id;
 }
 
@@ -2151,7 +2153,7 @@ function process_csv_array($courses, $students)
 		$d['d_contact'] = $donor['c'];
 		$d['d_email'] = $donor['e'];
 		$d['d_country'] = get_country($country);
-		$d['d_state'] = get_state($state, $country);
+		$d['d_state'] = get_state($state, $d['d_country']);
 		$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
 		$d['d_course'] = $cid;
 		$d['d_id_no'] = $donor['i'];
