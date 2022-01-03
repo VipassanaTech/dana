@@ -574,7 +574,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 
 	$query = "select c_id, CONCAT(DATE_FORMAT(c_start, '%Y'), ' / ', c_type, ' / ', DATE_FORMAT(c_start, '%D %b'), ' to ', DATE_FORMAT(c_end, '%D %b')) as 'a' 
-		from dh_course where c_start > SUBDATE(CURDATE(), INTERVAL 30 DAY) and c_start <= CURDATE() order by c_start";
+		from dh_course where c_start > SUBDATE(CURDATE(), INTERVAL 45 DAY) and c_start <= CURDATE() order by c_start";
 	$result = db_query( $query );
 	$courses = array('0' => t('Non Course') );
 	foreach($result as $row)
