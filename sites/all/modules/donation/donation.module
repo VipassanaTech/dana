@@ -1774,10 +1774,10 @@ function donation_report_form_submit($form, &$form_state)
 {
 	if ( $form_state['input']['op'] == 'Sync to Tally' )
 	{
-		$domain =  $_SERVER['HTTP_HOST'];
-	     drupal_set_message("Synced to Tally - ".$domain);
-	     //chdir("/dhamma/web/domains/dana");
-	     //exec("nohup /usr/bin/php dump-to-tally.php ".." &");
+		$domain =  str_replace(".dana.vridhamma.org", "", $_SERVER['HTTP_HOST']);
+	     drupal_set_message("Synced to Tally. It will take a few minutes ... ");
+	     chdir("/dhamma/web/domains/dana");
+	     exec("nohup /usr/bin/php dump-to-tally.php ".$domain." &");
 	}
 	elseif ( $form_state['input']['op'] == 'Process Email Queue' )
 	{
