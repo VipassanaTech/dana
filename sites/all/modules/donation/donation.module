@@ -254,6 +254,15 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Template which will be used for generating receipts'),
    );
 
+    $val = variable_get('tally_server', '');
+    $form['tally_server'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Tally Server with port'),
+         '#description' => t('Tally Server'),
+   );
 
     /*
 	Ability to send email, pushed to next phase    
