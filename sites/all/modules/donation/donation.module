@@ -29,6 +29,7 @@ function donation_permission()
 	$perms['process mail queue'] = array('title' => t('Process Email Queue') ) ;
 	$perms['delete transaction'] = array('title' => t('Delete Transaction') ) ;
 	$perms['access registration settings'] = array('title' => t('Access Registration System Settings') ) ;
+	$perms['sync to tally'] = array('title' => 'Sync to Tally') ;
 
 	return $perms;
 }
@@ -1484,6 +1485,8 @@ function donation_report_form($form, &$form_state)
 
 
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
+	if ( user_access("sync to tally") && (variable_get('tally_server', '') <> '') )
+		$form['sub2'] = array('#type' => 'submit', '#value' => 'Sync to Tally', '#weight' => 6.2);
 	/*if ( user_access("fetch registration data") )
 		$form['sub2'] = array('#type' => 'submit', '#value' => t('Fetch Registration Data'), '#weight' => 6.2);
 	if ( user_access("process mail queue") )
@@ -1769,11 +1772,12 @@ function donation_report_form($form, &$form_state)
 
 function donation_report_form_submit($form, &$form_state)
 {
-	if ( $form_state['input']['op'] == 'Fetch Registration Data' )
+	if ( $form_state['input']['op'] == 'Sync to Tally' )
 	{
-	   // drupal_set_message("Synced to Tally");
-	    //chdir("/dhamma/web/domains/donation");
-	    //exec("nohup /usr/bin/php dump-to-tally.php &");
+		$domain =  $_SERVER['HTTP_HOST'];
+	     drupal_set_message("Synced to Tally - ".$domain);
+	     //chdir("/dhamma/web/domains/dana");
+	     //exec("nohup /usr/bin/php dump-to-tally.php ".." &");
 	}
 	elseif ( $form_state['input']['op'] == 'Process Email Queue' )
 	{
