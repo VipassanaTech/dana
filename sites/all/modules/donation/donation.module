@@ -30,6 +30,8 @@ function donation_permission()
 	$perms['delete transaction'] = array('title' => t('Delete Transaction') ) ;
 	$perms['access registration settings'] = array('title' => t('Access Registration System Settings') ) ;
 	$perms['sync to tally'] = array('title' => 'Sync to Tally') ;
+	$perms['download donor master'] = array('title' => 'Download Donor Master');
+	$perms['upload donor master'] = array('title' => 'Upload Donor Master');
 
 	return $perms;
 }
@@ -110,6 +112,11 @@ function donation_menu()
 	     'page arguments' => array('donation_upload_form'),
 	     'page callback' => 'drupal_get_form',
 	     'access arguments' => array('administer donation'));
+
+	$items['admin/upload-donor-master'] = array( 'title' => t('Upload Donor Master'),
+	     'page arguments' => array('donation_donor_upload_form'),
+	     'page callback' => 'drupal_get_form',
+	     'access arguments' => array('upload donor master'));
 
 
 	return $items;
@@ -445,7 +452,7 @@ function _get_donor_detail()
 
   	foreach ($return as $row) {
     	$matches[] = array('name' => check_plain($row->d_name), 'address' => $row->d_address, 'country' => $row->country, 'did' => $row->d_id,
-    		'state' => $row->s_name, 'city' => $row->city, 'contact' => $row->d_contact, 'idno' => $row->d_id_no, 'pincode' => $row->d_pincode,
+    		'state' => $row->s_name, 'city' => $row->city, 'contact' => $row->d_contact, 'idtype' => $row->d_id_type, 'idno' => $row->d_id_no, 'pincode' => $row->d_pincode,
     		'email' => $row->d_email, 'gender' => $row->d_gender);
   	}
 	if ( $addr == '0' ) 
@@ -575,6 +582,13 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		$t = explode("=", $v);
 		$txn_types[trim($t[0])] = trim($t[1]);
 	}
+
+	$query = "select it_code, it_name from dh_id_types order by it_code";
+	$result = db_query( $query );
+	$id_types = array();
+	foreach($result as $row)
+		$id_types[ $row->it_code ] = $row->it_name;
+
 /*    $query = "select tm_display, tm_key from dh_tally_mapping where tm_foreign=0 and tm_enabled=1";
     $result = db_query( $query );
     $txn_types = array();
@@ -623,8 +637,11 @@ function donation_main_form($form, &$form_state, $edit_data = array())
       	)),
 		'#required' => true, '#weight' => 3.1, '#default_value' => get_default('d_name',$edit_data, '') );
 
+	$form['d_id_type'] = array('#type' => 'select', '#title' => 'ID Type', '#options' => $id_types, 
+		'#description' => 'Type of ID','#weight' => 3.2, '#required' => 1, '#default_value' => get_default('d_id_type', $edit_data, '1') );
+
 	$form['d_id_no'] = array('#type' => 'textfield', '#size' => 20, '#title' => 'ID No', 
-		'#description' => 'Passport No for Foriegn Nationals','#weight' => 3.2, '#default_value' => get_default('d_id_no', $edit_data, '') );
+		'#description' => 'Passport No for Foriegn Nationals','#weight' => 3.3, '#default_value' => get_default('d_id_no', $edit_data, '') );
 
 
 	$form['d_contact'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'Contact No', 
@@ -725,6 +742,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				$("#edit-d-state").val(data[0].state);
 				$("#edit-d-city").val(data[0].city);
 				$("#edit-d-id-no").val(data[0].idno);
+				$("#edit-d-id-type").val(data[0].idtype);
 				$("#edit-d-contact").val(data[0].contact);
 				$("#edit-d-pincode").val(data[0].pincode);
 				$("#edit-d-address").val(data[0].address);
@@ -812,15 +830,25 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			var res = true;
 			if (! $("#edit-d-foreign").is(":checked"))
 			{
-				if ( $("#edit-d-id-no").val() == "" )
+				if ( $("#edit-d-id-type").val() == "99" )
 					return true;
-				var regpan = /^([a-zA-Z]){5}([0-9]){4}([a-zA-Z]){1}?$/;
-				if(regpan.test($("#edit-d-id-no").val()) == false)
+
+				if ( $("#edit-d-id-no").val() == "" )
 				{
-					res = false;
-					alert("Invalid PAN card no!");
-					$("#edit-d-id-no").focus();
-				}					
+					alert("'.t("ID No is mandatory").'");
+					$("#edit-d-id-no").focus();				
+					return false;
+				}
+				if ( $("#edit-d-id-type").val() == "1" )
+				{
+					var regpan = /^([a-zA-Z]){5}([0-9]){4}([a-zA-Z]){1}?$/;
+					if(regpan.test($("#edit-d-id-no").val()) == false)
+					{
+						res = false;
+						alert("Invalid PAN card no!");
+						$("#edit-d-id-no").focus();
+					}										
+				}
 			}
 			else
 			{
@@ -1095,6 +1123,7 @@ function donation_main_form_submit($form, &$form_state)
 			$data[$key] = $value;
 	}
 	$donor['d_name'] = $data['d_name'];
+	$donor['d_id_type'] = $data['d_id_type'];
 	$donor['d_id_no'] = strtoupper($data['d_id_no']);
 	$donor['d_country'] = get_country($data['d_country']);
 	$donor['d_state'] = get_state($data['d_state'], $donor['d_country']);
@@ -1487,6 +1516,8 @@ function donation_report_form($form, &$form_state)
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
 	if ( user_access("sync to tally") && (variable_get('tally_server', '') <> '') )
 		$form['sub2'] = array('#type' => 'submit', '#value' => 'Sync to Tally', '#weight' => 6.2);
+	if ( user_access("download donor master")  )
+		$form['sub3'] = array('#type' => 'submit', '#value' => 'Download Donor Master', '#weight' => 6.3);
 	/*if ( user_access("fetch registration data") )
 		$form['sub2'] = array('#type' => 'submit', '#value' => t('Fetch Registration Data'), '#weight' => 6.2);
 	if ( user_access("process mail queue") )
@@ -1786,12 +1817,102 @@ function donation_report_form_submit($form, &$form_state)
 	    //chdir("/dhamma/web/domains/donation");
 	    //exec("nohup /usr/bin/php dump-to-tally.php &");
 	}
+	elseif ( $form_state['input']['op'] == 'Download Donor Master' )
+	{
+		$data = $form_state['input'];
+		$params = array();
+		$params['from'] = $data['r_from'];
+		$params['to'] = $data['r_to'];
+		$params['foreign'] = $data['r_foreign'];
+		$params['category'] = $data['r_category'];
+		$params['txn_type'] = $data['r_type'];
+	     download_donor_master($params);
+	    //chdir("/dhamma/web/domains/donation");
+	    //exec("nohup /usr/bin/php dump-to-tally.php &");
+	}
 	else
 	{
 	    $form_state['storage'] = $form_state['input'];
 	    $form_state['rebuild'] = TRUE;
 	}
 //	drupal_goto("donation-report-results", array('query' => $data));
+}
+
+function download_donor_master($params)
+{
+	global $user;
+	require_once(drupal_get_path('module','donation')."/Classes/PHPExcel.php");	
+	$append = "";
+	if (user_access('access own donation') && (!user_access('administer donation')))
+	{
+		$append = " and d_createdBy='".$user->uid."'";
+	}
+	$q = "select don.d_name 'Name', don.d_contact as 'Mobile', don.d_email as 'Email', it.it_name as 'ID Type', 
+		 don.d_id_no as 'ID No'
+		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
+		left join dh_id_types it on (don.d_id_type=it.it_name)
+		where d.d_id >0  and d.d_deleted = 0 ".$append ;
+		//where d.d_deleted=0 ".$append ;
+
+	if (($params['from'] <> '') )  // &&  (($course == 0) || ($course == '')) ) 
+		$q .= " and d.d_date >= '".$params['from']."' ";
+	if (($params['to'] <> '') ) //  && (($course == 0) || ($course == '') ) )
+		$q .= " and d.d_date <= '".$params['to']."' ";
+
+	switch ($params['foreign']) 
+	{
+		case 'local':
+			$q .= " and d.d_foreign=0 ";
+			break;	
+		case 'foreign':
+			$q .= " and d.d_foreign=1 ";
+			break;	
+	}
+
+
+	if ($params['category'] <> 'all')
+		$q .= " and d.d_category = '".$params['category']."' ";
+
+	if ($params['txn_type'] <> 'all')
+		$q .= " and d.d_type = '".$params['txn_type']."' ";
+
+	$q .= " group by d_contact, d_email, d_name, d_id_type, d_id_no";
+
+	$data = array();
+	$result = db_query($q);
+	if ($result->rowCount() > 0)
+	{
+		$tmpfname = tempnam(sys_get_temp_dir(), 'don-mas');
+		$fp = fopen($tmpfname, 'w');
+		fputcsv($fp, array('Full Name', 'Contact', 'Email', 'ID Type', 'ID No'));
+		$total_recs = $result->rowCount();
+		while ( $row = $result->fetchAssoc() ) 
+		{
+			if (!$row['ID Type'])
+				$row['ID Type'] = 'PAN';
+			fputcsv($fp, array_values($row));
+		}
+		fclose($fp);
+		header('Content-type: text/csv');
+		header('Content-disposition:attachment; filename="Donor-Master.csv"');
+		header('Cache-Control: max-age=0');
+		// If you're serving to IE 9, then the following may be needed
+		//header('Cache-Control: max-age=1');
+
+		// If you're serving to IE over SSL, then the following may be needed
+		header ('Expires: Mon, 26 Jul 1997 05:00:00 GMT'); // Date in the past
+		header ('Last-Modified: '.gmdate('D, d M Y H:i:s').' GMT'); // always modified
+		header ('Cache-Control: cache, must-revalidate'); // HTTP/1.1
+		header ('Pragma: public'); // HTTP/1.0
+
+		watchdog('donation', 'tmp file is '.$tmpfname, array(), WATCHDOG_NOTICE, 'link');
+		readfile($tmpfname);
+		exit();
+	}
+	else
+	{
+		drupal_set_message("No data found");
+	}
 }
 
 function donation_report_xls()
@@ -2100,11 +2221,11 @@ function process_csv( $csv )
 			// Ignore first row
 	    		if ($row == 1)
 	    			continue;
-			if (count($data) < 13)
+			if (count($data) < 14)
 				continue;
 			$courses[$data[0]."||".$data[1]] = $data[2];
 			$students[] = array( 'course' => $data[0]."||".$data[1], 'n' => $data[3], 'g' => $data[4], 'a' => $data[5], 'p' => $data[6], 'c' => $data[7], 
-				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12] );
+				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12], 'it' => $data[13] );
 			if (($row % $buffer) == 0)
 			{
 				$processed += process_csv_array( $courses, $students );
@@ -2169,6 +2290,7 @@ function process_csv_array($courses, $students)
 		$d['d_state'] = get_state($state, $d['d_country']);
 		$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
 		$d['d_course'] = $cid;
+		$d['d_id_type'] = $donor['it'];
 		$d['d_id_no'] = $donor['i'];
 		$d['d_occupation'] = '';
 		if ($check_id)
@@ -2184,5 +2306,86 @@ function process_csv_array($courses, $students)
 	}
 	return $count;
 }
+
+
+function donation_donor_upload_form($form, &$form_state)
+{
+	$form['upload'] = array(
+	    '#type' => 'file',
+	    '#title' => t('CSV File'),
+	    '#description' => t('Donor Master data in CSV format. Valid ID Types are PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card, No ID'),
+	);
+	$form['submit'] = array('#type' => 'submit', '#value' => 'Upload');
+	$form['#attributes']['enctype'] = 'multipart/form-data';
+	return $form;
+}
+
+function donation_donor_upload_form_validate($form, &$form_state)
+{
+	$file = file_save_upload('upload', array(
+		'file_validate_extensions' => array('csv'),
+	));
+	if ($file)
+	{
+		if ($file = file_move($file, 'private://')) {
+			$form_state['values']['upload'] = $file;
+		}
+		else {
+			form_set_error('upload', t('Failed to write the uploaded file the sites private folder.'));
+		}		
+	}
+}
+
+function donation_donor_upload_form_submit($form, &$form_state)
+{
+	$file=$form_state['values']['upload'];
+	unset($form_state['values']['upload']);
+	$file->status = FILE_STATUS_PERMANENT;
+	file_save($file);
+	//$f = file_stream_wrapper_get_instance_by_uri('private://')->getDirectoryPath()."/".$file->filename;
+	$row = 1;
+	drupal_set_message(process_donor_csv($file->uri));
+	//drupal_set_message("File is ".$file->filename);
+}
+
+
+function process_donor_csv( $csv )
+{
+	$processed = 0;
+	$row = 0;
+	//drupal_set_message("I am called $csv");
+	if (($handle = fopen($csv, "r")) !== FALSE) 
+	{
+		$q = "select it_name, it_code from dh_id_types";
+		$hand = db_query($q);
+		$it_types = array();
+		while ( $row = $hand->fetchAssoc() )
+			$it_types[$row['it_name']] = $row['it_code']; 
+
+	    	while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) 
+	    	{
+			$row++;
+			// Ignore first row
+	    		if ($row == 1)
+	    			continue;
+			if (count($data) < 5)
+				continue;
+			if ( ! in_array($data[3], $it_types))
+				continue;
+			$d = array();			
+			$d['d_id_type'] = $data[3];
+			$d['d_id_no'] = $data[4];
+			db_update('dh_donor')->fields($d)->condition('d_name', $data[0])->condition('d_contact', $data[1])->condition('d_email', $data[2])->execute();
+			$processed += 1;
+	    	}
+	    fclose($handle);
+	    //drupal_set_message("$processed records processed");
+	    return "$processed records processed";
+	}	
+	else
+		//drupal_set_message("Unable to open file $csv");
+		return "Unable to open file $csv";
+}
+
 
 ?>
