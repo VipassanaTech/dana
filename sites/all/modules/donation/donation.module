@@ -32,6 +32,7 @@ function donation_permission()
 	$perms['sync to tally'] = array('title' => 'Sync to Tally') ;
 	$perms['download donor master'] = array('title' => 'Download Donor Master');
 	$perms['upload donor master'] = array('title' => 'Upload Donor Master');
+	$perms['access income tax report'] = array('title' => 'Access income tax report');
 
 	return $perms;
 }
@@ -117,6 +118,11 @@ function donation_menu()
 	     'page arguments' => array('donation_donor_upload_form'),
 	     'page callback' => 'drupal_get_form',
 	     'access arguments' => array('upload donor master'));
+
+	$items['income-tax-report'] = array( 'title' => t('Income Tax 10BD'),
+	     'page arguments' => array('donation_income_tax_form'),
+	     'page callback' => 'drupal_get_form',
+	     'access arguments' => array('access income tax report'));
 
 
 	return $items;
@@ -742,7 +748,10 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				$("#edit-d-state").val(data[0].state);
 				$("#edit-d-city").val(data[0].city);
 				$("#edit-d-id-no").val(data[0].idno);
-				$("#edit-d-id-type").val(data[0].idtype);
+				var itype = "1";
+				if (data[0].idtype != "0")
+					itype = data[0].idtype;
+				$("#edit-d-id-type").val(itype);
 				$("#edit-d-contact").val(data[0].contact);
 				$("#edit-d-pincode").val(data[0].pincode);
 				$("#edit-d-address").val(data[0].address);
@@ -776,8 +785,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				return false;	
 			}
 
-			//if ( ! check_id_no() )
-			//	return false;
+			if ( ! check_id_no() )
+				return false;
 
 			if ($.trim( $("#edit-d-contact").val() ) == "")
 			{
@@ -1155,7 +1164,7 @@ function donation_main_form_submit($form, &$form_state)
 	{
 		db_update('dh_donor')->fields($donor)->condition('d_id', $data['d_donor'])->execute();
 	}
-	unset($data['d_name']); unset($data['d_id_no']); unset($data['d_country']); unset($data['d_state']);unset($data['d_city']);
+	unset($data['d_name']); unset($data['d_id_no']); unset($data['d_country']); unset($data['d_state']);unset($data['d_city']); unset($data['d_id_type']);
 	unset($data['d_contact']); unset($data['d_address']); unset($data['d_pincode']);unset($data['d_email']); unset($data['d_gender']); 
 	//unset($data['d_tax_payer']);
 
@@ -2370,10 +2379,10 @@ function process_donor_csv( $csv )
 	    			continue;
 			if (count($data) < 5)
 				continue;
-			if ( ! in_array($data[3], $it_types))
+			if ( ! in_array($data[3], array_keys($it_types) ))
 				continue;
 			$d = array();			
-			$d['d_id_type'] = $data[3];
+			$d['d_id_type'] = $it_types[$data[3]];
 			$d['d_id_no'] = $data[4];
 			db_update('dh_donor')->fields($d)->condition('d_name', $data[0])->condition('d_contact', $data[1])->condition('d_email', $data[2])->execute();
 			$processed += 1;
@@ -2387,5 +2396,63 @@ function process_donor_csv( $csv )
 		return "Unable to open file $csv";
 }
 
+
+function donation_income_tax_form($form, &$form_state)
+{
+	$years  = array('' => 'Choose');
+	$q = "select DISTINCT(date_format(d_date, '%Y')) as 'year' from dh_donation";
+	$hand = db_query($q);
+	while( $row = $hand->fetchAssoc() )
+		$years[$row['year']] = ($row['year'] - 1).' - '.$row['year'];
+	$form['financial_year'] =  array('#type' => 'select', '#title' => 'Select Financial Year', '#options' => $years, '#required' => 1);
+	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD');
+	return $form;
+}
+
+function donation_income_tax_form_submit($form, &$form_state)
+{
+	drupal_set_message("I am called");
+	generate_10bd( $form_state['input']['financial_year'] );
+}
+
+
+function generate_10bd( $year )
+{
+	$start_date = ($year - 1)."-04-01";
+	$end_date = $year."-03-31";
+	$q = "select 1 as 'serial', don.d_id_no, don.d_id_type, 'Section 80G' as 'sec80', don.d_name, don.d_address, d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') as 'type', SUM(d.d_amount) as 'Amount' from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
+	$result = db_query($q);
+	$header = array('Sr No', 'Unique ID', 'ID Code', 'Section Code', 'Name of Donor', 'Address of Donor', 'Donation Type', 'Mode of Receipt', 'Amount');
+	$fname = tempnam(sys_get_temp_dir(), "it10bd");
+	$fp = fopen($fname, "w");
+	fputcsv($fp, $header);
+	$serial = 1;
+	while($row = $result->fetchAssoc())
+	{
+		$row['serial'] = $serial++;
+		if ( strstr( strtolower($row['d_category']), "corpus") )
+			$row['d_category'] = 'Corpus';
+		elseif (strstr( strtolower($row['d_category']), "general") || (strstr( strtolower($row['d_category']), "others")) )
+			$row['d_category'] = 'Others';
+		else
+			$row['d_category'] = 'Specific Grant';
+		fputcsv($fp, $row);
+	}
+	fclose($fp);
+
+	header("Content-Type: text/csv");
+	header('Content-disposition:attachment; filename="ITR-10BD-'.$year.'.csv"');
+	header('Cache-Control: max-age=0');
+	// If you're serving to IE 9, then the following may be needed
+	//header('Cache-Control: max-age=1');
+
+	// If you're serving to IE over SSL, then the following may be needed
+	header ('Expires: Mon, 26 Jul 1997 05:00:00 GMT'); // Date in the past
+	header ('Last-Modified: '.gmdate('D, d M Y H:i:s').' GMT'); // always modified
+	header ('Cache-Control: cache, must-revalidate'); // HTTP/1.1
+	header ('Pragma: public'); // HTTP/1.0
+	readfile($fname);
+	exit();
+}
 
 ?>
