@@ -1211,8 +1211,8 @@ function donation_main_form_submit($form, &$form_state)
 function generate_receipt( $id, $amended )
 {
 	global $user;
-	$q = "select d.*,don.d_gender,don.d_name,don.d_contact,don.d_address,don.d_country,don.d_state, don.d_id_no, don.d_pincode, c.c_city from 
-		dh_donation d left join dh_donor don on d.d_donor=don.d_id left join dh_city c on don.d_city=c.c_id where d.d_id='$id'";
+	$q = "select d.*,don.d_gender,don.d_name,don.d_contact,don.d_address,don.d_country,don.d_state, it.it_name, don.d_id_no, don.d_pincode, c.c_city from 
+		dh_donation d left join dh_donor don on d.d_donor=don.d_id left join dh_id_types it on (don.d_id_type=it.it_id) left join dh_city c on don.d_city=c.c_id where d.d_id='$id'";
 	$handle = db_query($q);
 	if ($handle->rowCount() <=0 )
 		return;
@@ -1265,10 +1265,12 @@ function generate_receipt( $id, $amended )
 	$receipt_data['category'] = strtoupper($row['d_category']);
 	if ( strlen($receipt_data['on-bank'].$receipt_data['ref-no'].$receipt_data['category']) > 52 )
 		$receipt_data['category'] = substr($receipt_data['category'],0,10).'...';
-	if ($row['d_foreign'])
+	/*if ($row['d_foreign'])
 		$receipt_data['pan-or-passport'] = 'Passport No';
 	else
 		$receipt_data['pan-or-passport'] = 'PAN';
+	*/
+	$receipt_data['pan-or-passport'] = $row['it_name'];
 	$receipt_data['id-no'] = $row['d_id_no'];
 	$receipt_data['contact'] = $row['d_contact'];
 
