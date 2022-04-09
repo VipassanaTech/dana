@@ -1302,13 +1302,13 @@ function generate_receipt( $id, $amended )
 	//$content = $template['value'];
 	$new = str_replace($search, $replace, $content);
 
-	$tmpfile = tempnam("/tmp", "RCPT");
+	$tmpfile = tempnam("/var/dana", "RCPT");
 	$tmpfile_html = $tmpfile.'.html';
 	$handle = fopen($tmpfile_html, "w");
 	fwrite($handle, $new);
 	fclose($handle);
 
-	$cmd = "/usr/local/bin/wkhtmltopdf $tmpfile_html $outfile";
+	$cmd = "/usr/local/bin/wkhtmltopdf --enable-local-file-access $tmpfile_html $outfile";
 	//drupal_set_message($cmd);
 	exec($cmd);
 	unlink($tmpfile);
@@ -2222,6 +2222,8 @@ function process_csv( $csv )
 	$processed = 0;
 	$row = 0;
 	//drupal_set_message("I am called $csv");
+	$q = "select LOWER(it_name), it_id  from dh_id_types";
+	$it_types = db_query($q)->fetchAllKeyed();
 	if (($handle = fopen($csv, "r")) !== FALSE) 
 	{
 		$courses = array();	
@@ -2236,7 +2238,7 @@ function process_csv( $csv )
 				continue;
 			$courses[$data[0]."||".$data[1]] = $data[2];
 			$students[] = array( 'course' => $data[0]."||".$data[1], 'n' => $data[3], 'g' => $data[4], 'a' => $data[5], 'p' => $data[6], 'c' => $data[7], 
-				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12], 'it' => $data[13] );
+				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12], 'it' => $it_types[ strtolower($data[13]) ] );
 			if (($row % $buffer) == 0)
 			{
 				$processed += process_csv_array( $courses, $students );
