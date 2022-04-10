@@ -1213,7 +1213,7 @@ function generate_receipt( $id, $amended )
 {
 	global $user;
 	$q = "select d.*,don.d_gender,don.d_name,don.d_contact,don.d_address,don.d_country,don.d_state, it.it_name, don.d_id_no, don.d_pincode, c.c_city from 
-		dh_donation d left join dh_donor don on d.d_donor=don.d_id left join dh_id_types it on (don.d_id_type=it.it_id) left join dh_city c on don.d_city=c.c_id where d.d_id='$id'";
+		dh_donation d left join dh_donor don on d.d_donor=don.d_id left join dh_id_types it on (don.d_id_type=it.it_code) left join dh_city c on don.d_city=c.c_id where d.d_id='$id'";
 	$handle = db_query($q);
 	if ($handle->rowCount() <=0 )
 		return;
