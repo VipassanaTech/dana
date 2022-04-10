@@ -586,7 +586,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	foreach ($txns as $v) 
 	{
 		$t = explode("=", $v);
-		$txn_types[trim($t[0])] = trim($t[1]);
+		if (count($t) >= 2)
+			$txn_types[trim($t[0])] = trim($t[1]);
 	}
 
 	$query = "select it_code, it_name from dh_id_types order by it_code";
@@ -2222,7 +2223,7 @@ function process_csv( $csv )
 	$processed = 0;
 	$row = 0;
 	//drupal_set_message("I am called $csv");
-	$q = "select LOWER(it_name), it_id  from dh_id_types";
+	$q = "select LOWER(it_name), it_code  from dh_id_types";
 	$it_types = db_query($q)->fetchAllKeyed();
 	if (($handle = fopen($csv, "r")) !== FALSE) 
 	{
