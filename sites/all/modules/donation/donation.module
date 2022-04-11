@@ -1271,6 +1271,11 @@ function generate_receipt( $id, $amended )
 	else
 		$receipt_data['pan-or-passport'] = 'PAN';
 	*/
+	if (  strtoupper($row['it_name']) == 'NO ID')
+	{
+		$row['it_name'] = '';
+		$row['d_id_no'] = '';
+	}
 	$receipt_data['pan-or-passport'] = $row['it_name'];
 	$receipt_data['id-no'] = $row['d_id_no'];
 	$receipt_data['contact'] = $row['d_contact'];
