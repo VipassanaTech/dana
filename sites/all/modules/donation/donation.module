@@ -1706,7 +1706,8 @@ function donation_report_form($form, &$form_state)
                         if ( ! isset($totals[ $t ][$row['Currency']]) )
                                 $totals[ $t ][$row['Currency']] = 0;
                         if ( ! $row_deleted )
-                            $totals[ $t ][$row['Currency']] += $row[ $t ];
+                        	  if (is_numeric($row[$t]))
+                            	$totals[ $t ][$row['Currency']] += $row[ $t ];
                 }
 				
 				/*if ( ! isset($totals['Cash'][$row['Currency']]) )
