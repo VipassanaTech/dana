@@ -1,5 +1,6 @@
 <?php
 
+require_once('dana-s3.inc');
 require('Numbers/Words.php');
 include_once "font.inc";
 define('RECEPIT_PREFIX', 'ER-');
@@ -125,9 +126,13 @@ function donation_menu()
 	     'access arguments' => array('access income tax report'));
 
 
+	$items['download-receipt/%donation_id'] = array( 'title' => t('Download Receipt'),
+	     'page arguments' => array(1),
+	     'page callback' => 'download_receipt',
+	     'access arguments' => array('access donation'));
+
 	return $items;
 }
-
 
 function donation_id_load( $id )
 {
@@ -141,7 +146,7 @@ function donation_id_load( $id )
 	$result = $query->execute();
 	if ( $result->rowCount() <= 0 )
 		return $res;
-	return true;
+	return $id;
 }
 
 function donation_edit_access()
@@ -1291,8 +1296,8 @@ function generate_receipt( $id, $amended )
 	//{
 	$outfile = file_stream_wrapper_get_instance_by_uri('private://')->getDirectoryPath().'/receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
 	//}
-	$outuri = 'private://'.'receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
-
+	//$outuri = 'private://'.'receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
+	$outuri = str_replace('/dhamma/web/files/dana/' ,'', $outfile);
 	db_update('dh_donation')->fields(array('d_receipt' => $outuri))->condition('d_id', $id)->execute();
 	$search = array();
 	$replace = array();
@@ -1314,12 +1319,19 @@ function generate_receipt( $id, $amended )
 	fwrite($handle, $new);
 	fclose($handle);
 
+	$outfile = tempnam("/var/dana", "RCPTpdf");
+	$outfile = $tmpfile.'.pdf';
+
 	$cmd = "/usr/local/bin/wkhtmltopdf --enable-local-file-access $tmpfile_html $outfile";
 	//drupal_set_message($cmd);
 	exec($cmd);
 	unlink($tmpfile);
 	unlink($tmpfile_html);
 	//drupal_set_message($cmd);
+	$ret = s3_put_file('vri-dana', $outfile, str_replace("private://", '', $outuri) );
+	if (!$ret['success'])
+		watchdog('S3-upload', $ret['message']);
+	unlink($outfile);
 	return $outuri;
 
 }
@@ -1641,7 +1653,7 @@ function donation_report_form($form, &$form_state)
 				if ( isset($temp[1]) && ($temp[1] <> ''))
 				{
 					$a = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
-					$row['Receipt No'] = l($a, file_create_url($temp[1]), 
+					$row['Receipt No'] = l($a, "download-receipt/".$temp[0], 
 						array('attributes' => array('class' => array('receipt-file'), 'data-title' => $a )));
 
 				}
@@ -2465,6 +2477,24 @@ function generate_10bd( $year )
 	readfile($fname);
 	unlink($fname);
 	exit();
+}
+
+function download_receipt( $donation_id )
+{
+	$q = "select d_receipt from dh_donation where d_id=".$donation_id;
+	$f = db_query($q)->fetchField();
+	$data = s3_get_file('vri-dana', str_replace('private://', '', $f), 'stream');
+
+	header("Content-Type: application/pdf");
+	header('Content-disposition:inline; filename="'.basename($f).'"');
+	header('Cache-Control: private');
+	// If you're serving to IE 9, then the following may be needed
+	//header('Cache-Control: max-age=1');
+	if (!$data['success'])
+		watchdog('S3Debug', print_r($data, true));
+	print($data['data']);
+	exit();
+
 }
 
 ?>
