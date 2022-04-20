@@ -1131,7 +1131,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 function donation_main_form_submit($form, &$form_state)
 {
-	global $user;
+	global $user, $base_url;
 	foreach ($form_state['input'] as $key => $value) 
 	{
 		if ( substr($key,0,2) == 'd_')
@@ -1204,7 +1204,7 @@ function donation_main_form_submit($form, &$form_state)
 	{
 		drupal_set_message(t("Receipt No $receipt $action successfully"));
 		//send_donor_email( $donation_id );
-		$_SESSION['pdffile'] = file_create_url($file); 
+		$_SESSION['pdffile'] = $base_url.'/download-receipt/'.$donation_id; //file_create_url($file); 
 		drupal_goto("donation");
 		//drupal_add_js('<script type="text/javascript">	var pdf = window.open("'.$file.'", "_blank", "width=800, height=500, resizable=0");	alert("caleed");
 //</script>', 'inline'); 
