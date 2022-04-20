@@ -2485,7 +2485,7 @@ function download_receipt( $donation_id )
 	$q = "select d_receipt from dh_donation where d_id=".$donation_id;
 	$f = db_query($q)->fetchField();
 	$fname = str_replace('private://', '', $f);
-	if (  strpos($fname,0,8) == 'receipts' )
+	if (  substr($fname,0,8) == 'receipts' )
 		$fname = str_replace($base_url, array('https://', 'dana.vridhamma.org'), '')."/".$fname;
 	$data = s3_get_file('vri-dana', $fname, 'stream');
 
