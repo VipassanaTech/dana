@@ -2481,9 +2481,13 @@ function generate_10bd( $year )
 
 function download_receipt( $donation_id )
 {
+	global $base_url;
 	$q = "select d_receipt from dh_donation where d_id=".$donation_id;
 	$f = db_query($q)->fetchField();
-	$data = s3_get_file('vri-dana', str_replace('private://', '', $f), 'stream');
+	$fname = str_replace('private://', '', $f);
+	if (  strpos($fname,0,8) == 'receipts' )
+		$fname = str_replace($base_url, array('https://', 'dana.vridhamma.org'), '')."/".$fname;
+	$data = s3_get_file('vri-dana', $fname, 'stream');
 
 	header("Content-Type: application/pdf");
 	header('Content-disposition:inline; filename="'.basename($f).'"');
