@@ -126,13 +126,29 @@ function donation_menu()
 	     'access arguments' => array('access income tax report'));
 
 
-	$items['download-receipt/%donation_id'] = array( 'title' => t('Download Receipt'),
+	$items['download-receipt/%adonation_id'] = array( 'title' => t('Download Receipt'),
 	     'page arguments' => array(1),
 	     'page callback' => 'download_receipt',
 	     'access arguments' => array('access donation'));
 
 	return $items;
 }
+
+function adonation_id_load( $id )
+{
+	global $user;
+	$res = false;
+	$query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id)->condition('d_deleted', '0');
+	if (user_access('access own donation') && (!user_access('administer donation')) )
+	{
+		$query->condition('d_createdBy', $user->uid);	
+	}
+	$result = $query->execute();
+	if ( $result->rowCount() <= 0 )
+		return $res;
+	return $id;
+}
+
 
 function donation_id_load( $id )
 {
