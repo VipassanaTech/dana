@@ -299,6 +299,17 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Tally Server'),
    );
 
+
+    $val = variable_get('tally_voucher_type_name', '');
+    $form['tally_server'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Tally voucher type name'),
+         '#description' => t('Voucher type name. eg: Receipt'),
+   );
+
     /*
 	Ability to send email, pushed to next phase    
     $val = variable_get('email_subject', '');
