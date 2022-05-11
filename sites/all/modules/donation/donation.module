@@ -301,7 +301,7 @@ function donation_admin_form($form, &$form_state)
 
 
     $val = variable_get('tally_voucher_type_name', '');
-    $form['tally_server'] = array(
+    $form['tally_voucher_type_name'] = array(
          '#type' => 'textfield',
          '#size' => 100,
          '#required' => false,
