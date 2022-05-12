@@ -2339,9 +2339,9 @@ function process_csv_array($courses, $students)
 		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact'";
 		$check_id = db_query($q)->fetchField();
 		$d = array();
-		$d['d_name'] = $donor['n'];
+		$d['d_name'] =  mb_convert_encoding($donor['n'], "UTF-8");
 		$d['d_gender'] = $donor['g'];
-		$d['d_address'] = $donor['a'];
+		$d['d_address'] = mb_convert_encoding($donor['a'], "UTF-8");
 		$d['d_pincode'] = $donor['p'];
 		$d['d_contact'] = $donor['c'];
 		$d['d_email'] = $donor['e'];
