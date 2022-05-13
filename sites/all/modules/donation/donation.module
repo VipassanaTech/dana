@@ -776,7 +776,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		function get_donor_details( name )
 		{
 			var getaddr = 0;
-			$.getJSON("get-donor-detail",{course: $("#edit-d-course").val(), name: name, addr: getaddr}, function(data){
+			$.getJSON("/get-donor-detail",{course: $("#edit-d-course").val(), name: name, addr: getaddr}, function(data){
 				$("#edit-d-country").val(data[0].country);
 				$("#edit-d-state").val(data[0].state);
 				$("#edit-d-city").val(data[0].city);
@@ -797,7 +797,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 		function do_pincode( code )
 		{
-			$.getJSON("get-location-from-pincode",{ code: code}, function(data){
+			$.getJSON("/get-location-from-pincode",{ code: code}, function(data){
 				$("#edit-d-country").val(data[0].country);
 				$("#edit-d-state").val(data[0].state);
 				$("#edit-d-city").val(data[0].city);				
