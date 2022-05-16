@@ -1995,7 +1995,7 @@ function donation_report_xls()
         $txn_types_qry .= "IF(d.d_type='".trim($t[0])."',d.d_amount,'') as '".trim($t[1])."', ";
 	}
 
-
+	global $user;
 	$append = "";
 	if (user_access('access own donation') && (!user_access('administer donation')))
 	{
