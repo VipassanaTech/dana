@@ -2002,7 +2002,7 @@ function donation_report_xls()
 		$append = " and d_createdBy='".$user->uid."'";
 	}
 
-	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
+	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 		d.d_id as 'Receipt No', 
 		don.d_id_no as 'Passport/ID', 
 		$txn_types_qry
@@ -2012,6 +2012,7 @@ function donation_report_xls()
 		d.d_comment as 'Comment',
 		u.name as 'CreatedBy'  , d.d_created as 'Created On' 
 		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
+		left join dh_city ci on don.d_city=ci.c_id left join dh_state st on (don.d_state=st.s_code AND don.d_country=st.s_country) left join dh_country cy on don.d_country=cy.c_code
 		left join dh_course c on d.d_course=c.c_id 
 		where  d.d_deleted=0 ".$append ;
 
@@ -2151,26 +2152,34 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getColumnDimension('B')->setWidth(9);
 	$xls->getActiveSheet()->getColumnDimension('C')->setWidth(10);
 	$xls->getActiveSheet()->getColumnDimension('D')->setWidth(10);
-	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(20);
 	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(12);
 	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(15);
-	$xls->getActiveSheet()->getColumnDimension('I')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('J')->setWidth(15);
-	$end = chr(ord('K')+count($txn_types_totals)-1);
-	$xls->getActiveSheet()->getColumnDimension('K:'.$end)->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(8);
+	$xls->getActiveSheet()->getColumnDimension('I')->setWidth(8);
+	$xls->getActiveSheet()->getColumnDimension('J')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('K')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('L')->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension('M')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('N')->setWidth(15);	
+	$end = chr(ord('O')+count($txn_types_totals)-1);
+	$xls->getActiveSheet()->getColumnDimension('O:'.$end)->setWidth(7);
 	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+1) )->setWidth(20);
 	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+2) )->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+3) )->setWidth(7);
+	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+4) )->setWidth(10);
+	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+5) )->setWidth(10);
+	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+6) )->setWidth(20);	
 
 	$header = array('font' => array('bold' => true));
-	$xls->getActiveSheet()->getStyle('A1:R1')->applyFromArray($header);
+	$xls->getActiveSheet()->getStyle('A1:AA1')->applyFromArray($header);
 
 	$style_amount = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT));
-	$xls->getActiveSheet()->getStyle('K2:M'.$line)->applyFromArray($style_amount);
+	$xls->getActiveSheet()->getStyle('O2:T'.$line)->applyFromArray($style_amount);
 
 	$style_total = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT), 'font' => array('bold' => true));
-	$xls->getActiveSheet()->getStyle('A'.$line.':M'.$line)->applyFromArray($style_total);
-	$xls->getActiveSheet()->getStyle('A'.$line.':M'.$line)->getAlignment()->setWrapText(true);
+	$xls->getActiveSheet()->getStyle('A'.$line.':AA'.$line)->applyFromArray($style_total);
+	$xls->getActiveSheet()->getStyle('A'.$line.':AA'.$line)->getAlignment()->setWrapText(true);
 	$xls->getActiveSheet()->getRowDimension(($line))->setRowHeight(50);
 
 	$style_grand_total = array('alignment' => array('horizontal' => PHPExcel_Style_Alignment::HORIZONTAL_RIGHT), 'font' => array('bold' => true, 'size' => 15));
