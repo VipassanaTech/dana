@@ -2536,5 +2536,3 @@ function download_receipt( $donation_id )
 	exit();
 
 }
-
-?>
