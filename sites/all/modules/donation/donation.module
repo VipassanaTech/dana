@@ -423,6 +423,7 @@ function _get_country( $name )
     	$matches[$row->c_name] = $row->c_name;
   	}
   	drupal_json_output($matches);  	
+  	exit(0);
 }
 
 function _get_state( $name )
@@ -436,6 +437,7 @@ function _get_state( $name )
     	$matches[$row->s_name] = $row->s_name;
   	}
   	drupal_json_output($matches);  	
+  	exit(0);
 }
 
 function _get_city( $name )
@@ -452,7 +454,8 @@ function _get_city( $name )
   	foreach ($return as $row) {
     	$matches[$row->c_city] = $row->c_city;
   	}
-  	drupal_json_output($matches);  	
+  	drupal_json_output($matches);  
+  	exit(0);	
 }
 
 
@@ -470,6 +473,7 @@ function _get_location_from_pincode()
   	}
 
   	drupal_json_output($matches);  	
+  	exit(0);
 }
 
 function _get_donor_detail()
@@ -498,6 +502,7 @@ function _get_donor_detail()
 		unset($matches['address']);
 	}
   	drupal_json_output($matches);  	
+  	exit(0);
 }
 
 function _save_positions()
@@ -588,6 +593,7 @@ function _get_donors( $name )
   		drupal_json_output($single);
   	else
   		drupal_json_output($matches);
+  	exit(0);
 }
 
 
@@ -1607,7 +1613,7 @@ function donation_report_form($form, &$form_state)
 		
 		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2',d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 			CONCAT(d.d_id,'||',d.d_receipt) as 'Receipt No', 
-			don.d_id_no as 'Passport/ID No', 
+			don.d_id_no as 'Passport/ID No', don.d_email as 'Email',
 			 $txn_types_qry
 			/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
 			IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' or d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',
@@ -1739,7 +1745,6 @@ function donation_report_form($form, &$form_state)
 				}
 				else
 					$row['Extra'] = '';
-
                 foreach( $txn_types_totals as $t )
                 {
                         if ( ! isset($totals[ $t ][$row['Currency']]) )
