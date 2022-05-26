@@ -1938,7 +1938,7 @@ function download_donor_master($params)
 	if ($params['txn_type'] <> 'all')
 		$q .= " and d.d_type = '".$params['txn_type']."' ";
 
-	$q .= " group by d_contact, d_email, d_name, d_id_type, d_id_no";
+	$q .= " group by d_name, d_contact, d_email, it_name, d_id_no";
 
 	$data = array();
 	$result = db_query($q);
@@ -2449,6 +2449,8 @@ function process_donor_csv( $csv )
 			$d['d_id_type'] = $it_types[strtoupper($data[3])];
 			$d['d_id_no'] = $data[4];
 			db_update('dh_donor')->fields($d)->condition('d_name', $data[0])->condition('d_contact', $data[1])->condition('d_email', $data[2])->execute();
+			//$q = "update dh_donor set d_id_type='".$d['d_id_type']."', d_id_no='".$d['d_id_no']."' where d_name='".addslashes($data[0])."' and d_contact='".$data[1]."' and d_email='".addslashes($data[2])."'";
+			//drupal_set_message($q);
 			$processed += 1;
 	    	}
 	    fclose($handle);
