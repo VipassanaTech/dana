@@ -2486,7 +2486,7 @@ function generate_10bd( $year )
 {
 	$start_date = ($year - 1)."-04-01";
 	$end_date = $year."-03-31";
-	$q = "select 1 as 'serial', don.d_id_no, don.d_id_type, 'Section 80G' as 'sec80', don.d_name, don.d_address, d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') as 'type', SUM(d.d_amount) as 'Amount' from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
+	$q = "select 1 as 'serial', don.d_id_no, don.d_id_type, 'Section 80G' as 'sec80', don.d_name, don.d_address, d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') as 'type', SUM(d.d_amount) as 'Amount' from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d_deleted=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
 	$result = db_query($q);
 	$header = array('Sr No', 'Unique ID', 'ID Code', 'Section Code', 'Name of Donor', 'Address of Donor', 'Donation Type', 'Mode of Receipt', 'Amount');
 	$fname = tempnam(sys_get_temp_dir(), "it10bd");
