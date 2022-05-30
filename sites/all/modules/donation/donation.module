@@ -310,6 +310,28 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Voucher type name. eg: Receipt'),
    );
 
+
+    $val = variable_get('10bd_registration_no', '');
+    $form['10bd_registration_no'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Unique Registration Number (URN)'),
+         '#description' => t('Income Tax Unique Registration Number (URN)'),
+   );
+
+    $val = variable_get('10bd_registration_date', '');
+    $form['10bd_registration_date'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Registration Date of Issuance'),
+         '#description' => t('Date of Issuance of Unique Registration Number'),
+   );
+
+
     /*
 	Ability to send email, pushed to next phase    
     $val = variable_get('email_subject', '');
@@ -2471,7 +2493,7 @@ function donation_income_tax_form($form, &$form_state)
 	while( $row = $hand->fetchAssoc() )
 		$years[$row['year']] = ($row['year'] - 1).' - '.$row['year'];
 	$form['financial_year'] =  array('#type' => 'select', '#title' => 'Select Financial Year', '#options' => $years, '#required' => 1);
-	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD');
+	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD', '#description' => 'Registration No and Date of Issuance can be setup in Settings');
 	return $form;
 }
 
@@ -2486,7 +2508,12 @@ function generate_10bd( $year )
 {
 	$start_date = ($year - 1)."-04-01";
 	$end_date = $year."-03-31";
-	$q = "select 1 as 'serial', don.d_id_no, don.d_id_type, 'Section 80G' as 'sec80', don.d_name, don.d_address, d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') as 'type', SUM(d.d_amount) as 'Amount' from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d_deleted=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
+     $urn = variable_get('10bd_registration_no', '');
+     $urn_date = variable_get('10bd_registration_date', '');
+
+     $id_codes = array(1 => 'Permanent Account Number', 2 => 'Aadhaar Number', 3 => 'Tax Identification Number', 4 => 'Passport number', 5 => "Elector's photo identity number", 6 => 'Driving License number', 7 => 'Ration card number' );
+
+	$q = "select 1 as 'Sl. No.', '' as 'Pre Acknowledgement Number', don.d_id_type as 'ID Code', don.d_id_no as 'Unique Identification Number', 'Section 80G' as 'Section Code', $urn as 'Unique Registration Number (URN)', $urn_date as 'Date of Issuance of Unique Registration Number', don.d_name as 'Name of Donor', don.d_address as 'Address of donor', d.d_category as 'Donation Type', IF (d.d_type = 'cash', 'Cash', 'Electronic modes including account payee cheque/draft') as 'Mode of Receipt', SUM(d.d_amount) as 'Amount of donation (Indian rupees)' from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d_deleted=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
 	$result = db_query($q);
 	$header = array('Sr No', 'Unique ID', 'ID Code', 'Section Code', 'Name of Donor', 'Address of Donor', 'Donation Type', 'Mode of Receipt', 'Amount');
 	$fname = tempnam(sys_get_temp_dir(), "it10bd");
@@ -2502,6 +2529,7 @@ function generate_10bd( $year )
 			$row['d_category'] = 'Others';
 		else
 			$row['d_category'] = 'Specific Grant';
+		$row['ID Code'] = $id_codes[$row['ID Code']];
 		fputcsv($fp, $row);
 	}
 	fclose($fp);
