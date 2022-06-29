@@ -1626,7 +1626,8 @@ function donation_report_form($form, &$form_state)
 		$category = $data['r_category'];
 		$txn_type = $data['r_type'];
 		$course = $data['r_course'];
-		$receipt = str_replace( variable_get('receipt_prefix', ''), '' ,$data['r_receipt']);
+		//$receipt = str_replace( variable_get('receipt_prefix', ''), '' ,$data['r_receipt']);
+		$receipt = $data['r_receipt'];
 		$donor = $data['r_name'];
 		if ( isset($data['r_user']) )
 		   $r_user = $data['r_user'];
@@ -1634,7 +1635,7 @@ function donation_report_form($form, &$form_state)
 		   $r_user = '';
 		
 		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2',d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
-			CONCAT(d.d_id,'||',d.d_receipt) as 'Receipt No', 
+			CONCAT(d.d_id,'||',d.d_receipt_f,'||',d.d_receipt) as 'Receipt No', 
 			don.d_id_no as 'Passport/ID No', don.d_email as 'Email',
 			 $txn_types_qry
 			/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
@@ -1674,7 +1675,12 @@ function donation_report_form($form, &$form_state)
 			$q .= " and d.d_course = '$course' ";
 
 		if ($receipt <> '')
-			$q .= " and d.d_id = '$receipt' ";
+		{
+			if (is_numeric($receipt))
+				$q .= " and d.d_receipt_num = '$receipt' ";
+			else
+				$q .= " and d.d_receipt_f = '$receipt' ";
+		}
 		
 		if ($donor <> '')
 			$q .= " and don.d_name = '$donor' ";
@@ -1705,15 +1711,15 @@ function donation_report_form($form, &$form_state)
 				}
 				$vals = array_values($row);
 				$temp = explode("||", $row['Receipt No']);
-				if ( isset($temp[1]) && ($temp[1] <> ''))
+				if ( isset($temp[2]) && ($temp[2] <> ''))
 				{
-					$a = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
-					$row['Receipt No'] = l($a, "download-receipt/".$temp[0], 
-						array('attributes' => array('class' => array('receipt-file'), 'data-title' => $a )));
+					//$a = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
+					$row['Receipt No'] = l($temp[1], "download-receipt/".$temp[0], 
+						array('attributes' => array('class' => array('receipt-file'), 'data-title' => $temp[1] )));
 
 				}
 				else
-					$row['Receipt No'] = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
+					$row['Receipt No'] = $temp[1]; //variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
 				$temp = explode("||", $row['Action 1']);
 				$row_deleted = $temp[2];
 				if (user_access('edit own donation') || user_access('administer donation'))
