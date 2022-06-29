@@ -1353,7 +1353,7 @@ function generate_receipt( $id, $amended )
 	//}
 	//$outuri = 'private://'.'receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
 	$outuri = str_replace('/dhamma/web/files/dana/' ,'', $outfile);
-	db_update('dh_donation')->fields(array('d_receipt' => $outuri))->condition('d_id', $id)->execute();
+	db_update('dh_donation')->fields(array('d_receipt' => $outuri, 'd_receipt_num' => $id, 'd_receipt_f' => variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT)))->condition('d_id', $id)->execute();
 	$search = array();
 	$replace = array();
 	foreach($receipt_data as $k => $v)
