@@ -2043,6 +2043,7 @@ function donation_report_xls()
 		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',*/
 		IF(d.d_ref_no <> '',CONCAT(' ',d.d_ref_no), '' ) as 'Ref No', d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  
 		d.d_comment as 'Comment',
+		don.d_email as 'Email',
 		u.name as 'CreatedBy'  , d.d_created as 'Created On' 
 		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
 		left join dh_city ci on don.d_city=ci.c_id left join dh_state st on (don.d_state=st.s_code AND don.d_country=st.s_country) left join dh_country cy on don.d_country=cy.c_code
