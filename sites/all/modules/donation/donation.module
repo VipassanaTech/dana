@@ -2199,12 +2199,18 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getColumnDimension('N')->setWidth(15);	
 	$end = chr(ord('O')+count($txn_types_totals)-1);
 	$xls->getActiveSheet()->getColumnDimension('O:'.$end)->setWidth(7);
-	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+1) )->setWidth(20);
-	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+2) )->setWidth(7);
-	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+3) )->setWidth(7);
-	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+4) )->setWidth(10);
-	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+5) )->setWidth(10);
-	$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+6) )->setWidth(20);	
+	if ( (ord($end)+1) <= 90 )
+		$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+1) )->setWidth(20);
+	if ( (ord($end)+2) <= 90 )
+		$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+2) )->setWidth(7);
+	if ( (ord($end)+3) <= 90 )
+		$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+3) )->setWidth(7);
+	if ( (ord($end)+4) <= 90 )
+		$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+4) )->setWidth(10);
+	if ( (ord($end)+5) <= 90 )
+		$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+5) )->setWidth(25);
+	if ( (ord($end)+6) <= 90 )
+		$xls->getActiveSheet()->getColumnDimension(chr(ord($end)+6) )->setWidth(20);	
 
 	$header = array('font' => array('bold' => true));
 	$xls->getActiveSheet()->getStyle('A1:AA1')->applyFromArray($header);
