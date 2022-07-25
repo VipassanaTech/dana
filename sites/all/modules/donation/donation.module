@@ -2117,7 +2117,8 @@ function donation_report_xls()
 
 			$temp = explode(" ", $row['First Name']);
 			$row['First Name'] = $temp[0];
-			$row['Last Name'] = $temp[1];
+			if (isset($temp[1]))
+				$row['Last Name'] = $temp[1];
 
             foreach( $txn_types_totals as $t )
             {
