@@ -1761,7 +1761,10 @@ function donation_report_form($form, &$form_state)
 						array('attributes' => array('class' => array('address-proof'), 'data-title' => $temp[0] )));
 				}
 				else
-					$row['Last Name'] = $tt[1];
+				{
+					if (isset($tt[1]))
+						$row['Last Name'] = $tt[1];
+				}
 
 				if ( $row['Course'] == '' )
 					$row['Course'] = 'Non Course';
