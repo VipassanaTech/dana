@@ -1,5 +1,8 @@
 <?php
 
+require_once 'vendor/autoload.php';
+use Mailgun\Mailgun;
+
 require_once('dana-s3.inc');
 require('Numbers/Words.php');
 include_once "font.inc";
@@ -130,6 +133,17 @@ function donation_menu()
 	     'page arguments' => array(1),
 	     'page callback' => 'download_receipt',
 	     'access arguments' => array('access donation'));
+
+
+	$items['send-email/%adonation_id'] = array( 'title' => t('Send Email'),
+	     'page arguments' => array(1),
+	     'page callback' => 'send_email',
+	     'access arguments' => array('access donation report'));
+
+	$items['send-whatsapp/%adonation_id'] = array( 'title' => t('Send Whatsapp'),
+	     'page arguments' => array(1),
+	     'page callback' => 'send_whatsapp',
+	     'access arguments' => array('access donation report'));
 
 	return $items;
 }
@@ -289,6 +303,20 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Template which will be used for generating receipts'),
    );
 
+
+    $val = variable_get('donation_email_template', array('value' => '', 'format' => 'full_html') ) ;
+    $form['donation_email_template'] = array(
+         '#type' => 'text_format',
+         '#multiple' => true,
+         '#rows' => 35,
+         '#required' => TRUE,
+         '#format' => 'full_html',
+         '#default_value' => $val['value'],
+         '#title' => t('Donation Email Template'),
+         '#description' => t('Email Template which will be used for emailing receipts'),
+   );
+
+
     $val = variable_get('tally_server', '');
     $form['tally_server'] = array(
          '#type' => 'textfield',
@@ -332,8 +360,8 @@ function donation_admin_form($form, &$form_state)
    );
 
 
-    /*
-	Ability to send email, pushed to next phase    
+    
+	//Ability to send email, pushed to next phase    
     $val = variable_get('email_subject', '');
     $form['email_subject'] = array(
          '#type' => 'textfield',
@@ -344,15 +372,17 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Email subject'),
    );
 
-    $val = variable_get('donation_template', '');
-    $form['donation_template'] = array(
-         '#type' => 'textarea',
+
+    $val = variable_get('email_template', array('value' => '', 'format' => 'full_html') ) ;
+    $form['email_template'] = array(
+         '#type' => 'text_format',
          '#multiple' => true,
-         '#rows' => 25,
+         '#rows' => 35,
          '#required' => TRUE,
-         '#default_value' => $val,
-         '#title' => t('Donation Email Template'),
-         '#description' => t('Email template which will be used when sending email'),
+         '#format' => 'full_html',
+         '#default_value' => $val['value'],
+         '#title' => t('Email Template'),
+         '#description' => t('Email Template which will be used for emailing receipts'),
    );
 
     $val = variable_get('donation_from', '');
@@ -381,7 +411,7 @@ function donation_admin_form($form, &$form_state)
          '#title' => t('Email to send a bcc copy of the receipt'),
          '#description' => t('Email to send a bcc copy of the receipt. For eg centre email id for reference'),
    );
-   */
+   
  
    return system_settings_form($form);
 }
@@ -750,8 +780,11 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	
 	$form['d_comment'] = array('#type' => 'textfield', '#size' => 105, '#title' => 'Comment','#weight' => 11.1,'#default_value' => get_default('d_comment', $edit_data,'') );
 
+	$form['paper'] = array('#type' => 'checkbox', '#title' => 'Paper', '#weight' => 12.1,'#default_value' => 1);
+	$form['email'] = array('#type' => 'checkbox', '#title' => 'Email', '#weight' => 12.2,'#default_value' => 0);
+	$form['whatsapp'] = array('#type' => 'checkbox', '#title' => 'Whatsapp', '#weight' => 12.3,'#default_value' => 0);
 	$form['d_donor'] = array('#type' => 'hidden', '#value' =>  get_default('donor_id', $edit_data, '-1') );
-	$form['sub'] = array('#type' => 'submit', '#value' => get_default('submit',$edit_data,'Submit'), '#weight' => 12.1);
+	$form['sub'] = array('#type' => 'submit', '#value' => get_default('submit',$edit_data,'Submit'), '#weight' => 13.1);
 	
 	$form['sub1'] = array('#type' => 'markup', '#markup' => '<div id="dialog-confirm" title="Confirm Details"></div>');
 
@@ -1254,6 +1287,19 @@ function donation_main_form_submit($form, &$form_state)
 	$receipt = variable_get('receipt_prefix', '').str_pad($donation_id, 7, "0", STR_PAD_LEFT);
 
 	$file = generate_receipt( $donation_id, $amended );
+	if (isset($form_state['input']['email']) && ($form_state['input']['email']) )
+		send_donor_email( $donation_id );
+
+	if (isset($form_state['input']['whatsapp']) && ($form_state['input']['whatsapp']) )
+	{
+		$wa_id = whatsapp_360_get_waid($donor['d_contact']);
+		if ($wa_id)
+		{
+			$params_body = array($form_state['input']['d_name'], $form_state['input']['d_currency'].' '.$form_state['input']['d_amount'], date('jS F, Y', strtotime($form_state['input']['d_date'])));
+			$params_header = array(upload_whatsapp_pdf($donation_id));
+			$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body );
+		}
+	}
 
 	if ($donation_id > 0 )
 	{
@@ -1353,7 +1399,7 @@ function generate_receipt( $id, $amended )
 	//}
 	//$outuri = 'private://'.'receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
 	$outuri = str_replace('/dhamma/web/files/dana/' ,'', $outfile);
-	db_update('dh_donation')->fields(array('d_receipt' => $outuri, 'd_receipt_num' => $id, 'd_receipt_f' => variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT)))->condition('d_id', $id)->execute();
+	db_update('dh_donation')->fields(array('d_receipt' => $outuri, 'd_receipt_email' => str_replace(".pdf", "-email.pdf", $outuri) , 'd_receipt_num' => $id, 'd_receipt_f' => variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT)))->condition('d_id', $id)->execute();
 	$search = array();
 	$replace = array();
 	foreach($receipt_data as $k => $v)
@@ -1362,33 +1408,43 @@ function generate_receipt( $id, $amended )
 		$replace[] = $v;
 	}
 	$template = variable_get('donation_template', array('value' => '', 'format' => 'full_html')); //conf_path().'/templates/donation-template';
+	$email_template = variable_get('donation_email_template', array('value' => '', 'format' => 'full_html')); //conf_path().'/templates/donation-template';
 	$base_path = 'file://'.drupal_realpath(".");
 	$content = str_replace('/sites/all/modules/donation/templates/', $base_path.'/sites/all/modules/donation/templates/', $template['value']) ;
-	
+	$content_email = str_replace('/sites/all/modules/donation/templates/', $base_path.'/sites/all/modules/donation/templates/', $email_template['value']) ;
 	//$content = $template['value'];
 	$new = str_replace($search, $replace, $content);
+	$new_email = str_replace($search, $replace, $content_email);
 
-	$tmpfile = tempnam("/var/dana", "RCPT");
-	$tmpfile_html = $tmpfile.'.html';
-	$handle = fopen($tmpfile_html, "w");
-	fwrite($handle, $new);
-	fclose($handle);
+	$types = array( 'regular' => $new, 'email' => $new_email);
+	foreach($types as $k => $v)
+	{
+		if (!$v)
+			continue;
+		$tmpfile = tempnam("/var/dana", "RCPT");
+		$tmpfile_html = $tmpfile.'.html';
+		$handle = fopen($tmpfile_html, "w");
+		fwrite($handle, $v);
+		fclose($handle);
 
-	$outfile = tempnam("/var/dana", "RCPTpdf");
-	$outfile = $tmpfile.'.pdf';
+		$outfile = tempnam("/var/dana", "RCPTpdf");
+		$outfile = $tmpfile.'.pdf';
 
-	$cmd = "/usr/local/bin/wkhtmltopdf --enable-local-file-access $tmpfile_html $outfile";
-	//drupal_set_message($cmd);
-	exec($cmd);
-	unlink($tmpfile);
-	unlink($tmpfile_html);
-	//drupal_set_message($cmd);
-	$ret = s3_put_file('vri-dana', $outfile, str_replace("private://", '', $outuri) );
-	if (!$ret['success'])
-		watchdog('S3-upload', $ret['message']);
-	unlink($outfile);
+		$cmd = "/usr/local/bin/wkhtmltopdf --enable-local-file-access $tmpfile_html $outfile";
+		//drupal_set_message($cmd);
+		exec($cmd);
+		unlink($tmpfile);
+		unlink($tmpfile_html);
+		//drupal_set_message($cmd);
+		$newuri = $outuri;
+		if ($k == 'email')
+			$newuri = str_replace(".pdf", "-email.pdf", $newuri);
+		$ret = s3_put_file('vri-dana', $outfile, str_replace("private://", '', $newuri) );
+		if (!$ret['success'])
+			watchdog('S3-upload', $ret['message']);
+		unlink($outfile);
+	}
 	return $outuri;
-
 }
 
 function process_mail_queue()
@@ -1408,55 +1464,55 @@ function process_mail_queue()
 
 function send_donor_email( $id )
 {
-	$q = "select d.*,don.d_gender,don.d_name, don.d_email from 
+	$q = "select d.*,don.d_gender,don.d_name, don.d_email, DATE_FORMAT(d_date, '%D %M, %Y') as 'd_date_c' from 
 	dh_donation d left join dh_donor don on d.d_donor=don.d_id where d.d_id='$id'";
 	$handle = db_query($q);
 	if ($handle->rowCount() <=0 )
 	{
 		drupal_set_message(t("Could not find donation id $id") );
-		return;
+		return array('success' => False, 'msg' => "Could not find donation id $id");
 	}
 	$row = $handle->fetchAssoc();
 	if ( $row['d_email'] == "")
 	{
 		drupal_set_message(t("No email address to send e-Receipt") );
-		return;		
+		return array('success' => False, 'msg' =>"No email address to send e-Receipt" );		
 	}
 
-    $mail['module'] = 'mimemail';
-    $mail['key'] = time();
-    $mail['id'] = 'donation-mail';
-    $mail['to'] = $row['d_email'];
-    $mail['subject'] = str_replace(array('<name>', '<id>'), array($row['d_name'], $id), variable_get('email_subject', 'Thank you')) ; 
-    $mail['body'][] = str_replace(array('<name>', '<id>'), array($row['d_name'], $id), variable_get('donation_template', '')) ;
-    $mail['from'] = variable_get('donation_email', '');
-    $mail['headers']['MIME-Version'] =  '1.0';
-    $mail['headers']['Content-Type'] = 'text/html; charset=UTF-8; format=flowed';
-    $mail['headers']['Content-Transfer-Encoding'] = '8Bit';
-    $mail['headers']['X-Mailer'] = 'Dhamma';
-    $mail['headers']['From'] = variable_get('donation_from', '');
-    //if ( variable_get('donation_email_bcc', '') <> '')
-    $mail['headers']['Bcc'] = variable_get('donation_email_bcc', '');
+	$replace = array('[donor-name]' => $row['d_name'], '[currency]' => $row['d_currency'], '[receipt-date]' => $row['d_date_c'], '[amount]' => $row['d_amount'], '[centre-from-name]' => variable_get('donation_from', ''), '[donation-id]' => $row['d_receipt_f']);
+    $subject = str_replace(array_keys($replace), array_values($replace), variable_get('email_subject', 'Thank you')) ; 
+    $body = str_replace(array_keys($replace), array_values($replace), variable_get('email_template', array('value' => '', 'format' => 'full_html'))['value']) ;
 
-    //drupal_set_message(file_stream_wrapper_get_instance_by_uri($row['d_receipt'])->realpath());
-    $fname = file_stream_wrapper_get_instance_by_uri($row['d_receipt'])->realpath();
-	$attachments=array(
-	  'path' => $fname,
-	  'filecontent' => file_get_contents( $fname ),
-	  'filename' => basename($fname),
-	  'mime' => 'application/pdf',
-	  'encoding' => 'base64',
-      'disposition' => 'attachment',
+	$fname = str_replace('private://', '', $row['d_receipt_email']);
+	if (  substr($fname,0,8) == 'receipts' )
+		$fname = str_replace(array('https://', 'http://', '.dana.vridhamma.org'), '', $base_url)."/".$fname;
+    	$data = s3_get_file('vri-dana', $fname, 'file');
+
+	$attachment = array($data['data']);
+	$from = variable_get('donation_from', '').'<'.variable_get('donation_email', '').'>';
+	$mg = Mailgun::create(variable_get('mailgun_key', ''));
+	$to = $row['d_email'];
+
+	$options = array(
+	  'from'    => $from,
+	  'to'      => $to,  //info@dhamma.net.in
+	  'subject' => $subject,
+	  'html'    => $body,
+	  'v:don-id' => $id,
+	  'v:test-mode' => 0
 	);
-	$mail['params']['attachments'][0] = $attachments;
+	if (variable_get('donation_email_bcc', ''))
+		$options['bcc'] = variable_get('donation_email_bcc', '');
 
-	$system = drupal_mail_system('mimemail', time());
-	$message = $system->format($mail);
-
-	if ($system->mail($message)) 
-  		return TRUE;
-	else 
-  		return FALSE;
+	if ( count($attachment) > 0)
+	{
+		foreach( $attachment as $a )
+			$options['attachment'][] = array('filePath' => $a);
+	}
+	$res = $mg->messages()->send(variable_get('mailgun_primary_domain', ''), $options );
+	$mid = $res->getId();
+	watchdog('DanaSendEmail', "Email sent to ".$row['d_email']." (".$mid.")");
+	return array('success' => True, 'msg' => $mid);
 }
 
 function get_country($name)
@@ -1634,7 +1690,7 @@ function donation_report_form($form, &$form_state)
 		else
 		   $r_user = '';
 		
-		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2',d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
+		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 2', d_receipt_email as 'Action 3', d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'First Name', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Last Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 			CONCAT(d.d_id,'||',d.d_receipt_f,'||',d.d_receipt) as 'Receipt No', 
 			don.d_id_no as 'Passport/ID No', don.d_email as 'Email',
 			 $txn_types_qry
@@ -1743,6 +1799,11 @@ function donation_report_form($form, &$form_state)
 				else
 					$row['Action 2'] = t('No Access');
 
+				if ($row['Action 3'])
+				{
+					$row['Action 3'] = l("Email", "/send-email/".$temp[0], array('attributes' => array('class' => array('send-email'), 'action-type' => 'email', 'did' => $temp[0] )) );
+					$row['Action 3'] .= "\n".l("Whatsapp", "/send-whatsapp/".$temp[0], array('attributes' => array('class' => array('send-whatsapp' ), 'action-type' => 'whatsapp', 'did' => $temp[0] )) );
+				}
 
 				$temp = explode("||", $row['First Name']);
 				$tt = explode(" ", trim($temp[0]) );
@@ -1884,6 +1945,26 @@ function donation_report_form($form, &$form_state)
 			$("a.delete-transaction").unbind("click");
 			$("a.delete-transaction").on( "click", function(e){
 				return confirm("Are you sure you want to cancel the transaction?");
+			});
+
+			$("a.send-email,a.send-whatsapp").unbind("click");
+			$("a.send-email,a.send-whatsapp").on( "click", function(e){
+				var type = $(this).attr("action-type");
+				var did = $(this).attr("did");
+				var old = $(this).html();
+				var dom_a = $(this);
+				$(this).html("Loading...");
+				$.ajax({url: "/send-"+type+"/"+did, dataType: "json", 
+					success: function(data) {
+						if (data.success)
+							alert("Message successfully sent");
+						else
+							alert("Send Failed: "+data.msg);
+						dom_a.html(old);
+						return false;
+					}
+				 } );
+				return false;
 			});
 
 		});
@@ -2040,7 +2121,7 @@ function donation_report_xls()
 
 	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 		d.d_id as 'Receipt No', 
-		don.d_id_no as 'Passport/ID', 
+		don.d_id_no as 'Passport/ID',  
 		$txn_types_qry
 		/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
 		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',*/
@@ -2589,3 +2670,177 @@ function download_receipt( $donation_id )
 	exit();
 
 }
+
+function upload_whatsapp_pdf( $donation_id )
+{
+	$q = "select d_receipt_email from dh_donation where d_id=".$donation_id;
+	$f = db_query($q)->fetchField();
+	$fname = str_replace('private://', '', $f);
+	if (  substr($fname,0,8) == 'receipts' )
+		$fname = str_replace(array('https://', 'http://', '.dana.vridhamma.org'), '', $base_url)."/".$fname;
+	$data = s3_get_file('vri-dana', $fname, 'stream');
+	if (!$data['success'])
+	{
+		watchdog('S3Debug', print_r($data, true));
+		return 0;		
+	}
+
+	try {
+		$curl = curl_init();
+
+		curl_setopt_array($curl, array(
+		  CURLOPT_URL => variable_get('whatsapp_url', '').'/media',
+		  CURLOPT_RETURNTRANSFER => true,
+		  CURLOPT_ENCODING => '',
+		  CURLOPT_MAXREDIRS => 10,
+		  CURLOPT_TIMEOUT => 0,
+		  CURLOPT_FOLLOWLOCATION => true,
+		  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		  CURLOPT_CUSTOMREQUEST => 'POST',
+		  CURLOPT_POSTFIELDS => $data['data'],
+		  CURLOPT_HTTPHEADER => array(
+		    'D360-Api-Key: '.variable_get('whatsapp_key', ''),
+		    'Content-Type: application/pdf'
+		  ),
+		));
+
+		$response = curl_exec($curl);
+		curl_close($curl);
+
+		$ret = json_decode($response);
+		return $ret->media[0]->id;
+	} catch (\Throwable $e) {
+		watchdog("upload_whatsapp_pdf", "Error uploading $donation_id: ".$e->getMessage());
+	}
+	return 0;
+} 
+
+function send_email( $donation_id )
+{
+	$ret = send_donor_email($donation_id);
+	drupal_json_output($ret);
+	exit(0);
+}
+
+function send_whatsapp( $donation_id )
+{
+	$q = "select d.*,don.d_name,don.d_contact from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d.d_id=$donation_id";
+	$row = db_query($q)->fetchAssoc();
+	$wa_id = whatsapp_360_get_waid($row['d_contact']);
+	$ret = array('success' => False, 'msg' => 'Unable to send');
+	if ($wa_id)
+	{
+		$params_body = array($row['d_name'], $row['d_currency'].' '.$row['d_amount'], date('jS F, Y', strtotime($row['d_date'])));
+		$params_header = array(upload_whatsapp_pdf($donation_id));
+		$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body );
+		if ($response)
+		{
+			$ret['success'] = True;
+			$ret['msg'] = $response;
+		}
+
+	}
+	drupal_json_output($ret);
+	exit(0);
+}
+
+function send_whatsapp_360( $to, $template, $params_header, $params_body, $type = "template")
+{
+    $namespace = variable_get('whatsapp_namespace', '');
+    $wa_url = variable_get('whatsapp_url', '');
+    $wa_api_key = variable_get('whatsapp_key', '');
+    $p_arr = array();
+    if ($params_body)
+    {
+        foreach($params_body as $key => $val)
+        {
+            $p_arr[] = array("type" => "text", "text" => $val );
+        }
+    }
+    if ($params_header)
+    {
+        foreach($params_header as $key => $val)
+        {
+            $p_header_arr[] = array("type" => "document", "document" => array( "id" => $val, "filename" => "receipt.pdf" ) );
+        }
+    }
+
+    if ($type == 'template')
+        $payload = json_encode(array('to' => $to, "type" => 'template', 'template' => array('namespace' => $namespace, "language" => array("policy" => "deterministic", "code" => "en"), "name" => $template, "components" => array(array("type" => "body", "parameters" => $p_arr), array("type" => "header", "parameters" => $p_header_arr) ))));
+    else
+        $payload = json_encode(array('to' => $to, "type" => 'text', 'text' => array("body" => $params) ));
+
+    $headers = [
+        "Content-Type: application/json",
+        "D360-Api-Key: $wa_api_key",
+    ];
+
+    $curl = curl_init();
+
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $wa_url.'/messages',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => "POST",
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_HTTPHEADER => $headers,
+    ]);
+
+    $response = curl_exec($curl);
+    $err = curl_error($curl);
+
+    curl_close($curl);
+    $ret = '';
+
+    if ($err) {
+        watchdog('Donation', 'Unable to send Whatsapp: '.$to.' template: '.$template.': '.$err.': '.$response, array(), WATCHDOG_ERROR);
+    } else {
+        $ret = json_decode($response)->messages[0]->id;
+    }
+    return $ret;
+}
+
+
+function whatsapp_360_get_waid( $to )
+{
+    $namespace = variable_get('whatsapp_namespace', '');
+    $wa_url = variable_get('whatsapp_url', '');
+    $wa_api_key = variable_get('whatsapp_key', '');
+    $p_arr = array();
+
+    $payload = json_encode(array("blocking" => "wait", "contacts" => array($to),  "force_check" => True));
+
+    $headers = [
+        "Content-Type: application/json",
+        "D360-Api-Key: $wa_api_key",
+    ];
+
+    $curl = curl_init();
+
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $wa_url.'/contacts',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => "POST",
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_HTTPHEADER => $headers,
+    ]);
+
+    $response = curl_exec($curl);
+    $err = curl_error($curl);
+
+    curl_close($curl);
+    $ret = '';
+    watchdog('Donation', 'waid'.$response);
+    if ($err) {
+        watchdog('Donation', 'Unable to get Whatsapp ID: '.$to.': '.$err.': '.$response, array(), WATCHDOG_ERROR);
+    } else {
+        $ret = json_decode($response);
+        if (($ret->contacts[0]->status == 'valid') && isset($ret->contacts[0]->wa_id))
+            $ret = $ret->contacts[0]->wa_id;
+        else
+            $ret = '';
+    }
+    return $ret;
+}
+
+
+
