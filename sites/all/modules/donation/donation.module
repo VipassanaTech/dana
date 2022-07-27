@@ -1810,7 +1810,7 @@ function donation_report_form($form, &$form_state)
 					$row['Action 3'] .= "\n".l("Whatsapp", "/send-whatsapp/".$temp[0], array('attributes' => array('class' => array('send-whatsapp' ), 'action-type' => 'whatsapp', 'did' => $temp[0] )) );
 				}
 
-				$temp = explode("||", $row['First Name']);
+				$temp = explode("||", $row['Name']);
 				//$tt = explode(" ", trim($temp[0]) );
 				if ( isset($temp[1]) && ($temp[1] <> '') )
 				{
