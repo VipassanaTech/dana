@@ -1284,9 +1284,9 @@ function donation_main_form_submit($form, &$form_state)
 		$amended = 1;
 	}
 
-	$receipt = variable_get('receipt_prefix', '').str_pad($donation_id, 7, "0", STR_PAD_LEFT);
+	//$receipt = variable_get('receipt_prefix', '').str_pad($donation_id, 7, "0", STR_PAD_LEFT);
 
-	$file = generate_receipt( $donation_id, $amended );
+	$receipt = generate_receipt( $donation_id, $amended );
 	if (isset($form_state['input']['email']) && ($form_state['input']['email']) )
 		send_donor_email( $donation_id );
 
@@ -1297,7 +1297,7 @@ function donation_main_form_submit($form, &$form_state)
 		{
 			$params_body = array($form_state['input']['d_name'], $form_state['input']['d_currency'].' '.$form_state['input']['d_amount'], date('jS F, Y', strtotime($form_state['input']['d_date'])));
 			$params_header = array(upload_whatsapp_pdf($donation_id));
-			$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body );
+			$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body, $receipt );
 		}
 	}
 
@@ -1393,7 +1393,7 @@ function generate_receipt( $id, $amended )
 
 	$receipt_data['user-c'] = sanitize($user->name);
 	$receipt_data['donor-c'] = sanitize($row['d_name']);
-	generate_sign($receipt_data['user-c'] );
+	//generate_sign($receipt_data['user-c'] );
 	//generate_sign($receipt_data['donor-c'] );
 
 
@@ -1449,7 +1449,7 @@ function generate_receipt( $id, $amended )
 			watchdog('S3-upload', $ret['message']);
 		unlink($outfile);
 	}
-	return $outuri;
+	return variable_get('receipt_prefix', '').str_pad($receipt_num, 7, "0", STR_PAD_LEFT));
 }
 
 function process_mail_queue()
@@ -1512,7 +1512,7 @@ function send_donor_email( $id )
 	if ( count($attachment) > 0)
 	{
 		foreach( $attachment as $a )
-			$options['attachment'][] = array('filePath' => $a);
+			$options['attachment'][] = array('filePath' => $a, 'filename' => $row['d_receipt_f'].'.pdf');
 	}
 	$res = $mg->messages()->send(variable_get('mailgun_primary_domain', ''), $options );
 	$mid = $res->getId();
@@ -2737,7 +2737,7 @@ function send_whatsapp( $donation_id )
 	{
 		$params_body = array($row['d_name'], $row['d_currency'].' '.$row['d_amount'], date('jS F, Y', strtotime($row['d_date'])));
 		$params_header = array(upload_whatsapp_pdf($donation_id));
-		$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body );
+		$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body, $row['d_receipt_f'] );
 		if ($response)
 		{
 			$ret['success'] = True;
@@ -2749,7 +2749,7 @@ function send_whatsapp( $donation_id )
 	exit(0);
 }
 
-function send_whatsapp_360( $to, $template, $params_header, $params_body, $type = "template")
+function send_whatsapp_360( $to, $template, $params_header, $params_body, $receipt_num, $type = "template")
 {
     $namespace = variable_get('whatsapp_namespace', '');
     $wa_url = variable_get('whatsapp_url', '');
@@ -2766,7 +2766,7 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $type 
     {
         foreach($params_header as $key => $val)
         {
-            $p_header_arr[] = array("type" => "document", "document" => array( "id" => $val, "filename" => "receipt.pdf" ) );
+            $p_header_arr[] = array("type" => "document", "document" => array( "id" => $val, "filename" => $receipt_num.".pdf" ) );
         }
     }
 
