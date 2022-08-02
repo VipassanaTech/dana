@@ -2125,7 +2125,7 @@ function donation_report_xls()
 	}
 
 	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
-		d.d_id as 'Receipt No', 
+		d.d_receipt_f as 'Receipt No', 
 		don.d_id_no as 'Passport/ID',  
 		$txn_types_qry
 		/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
@@ -2199,7 +2199,7 @@ function donation_report_xls()
 				$headers_done = true;
 				$xls->getActiveSheet()->fromArray($headers, NULL, 'A1');
 			}
-			$row['Receipt No'] = variable_get('receipt_prefix', '').str_pad($row['Receipt No'], 7, "0", STR_PAD_LEFT);
+			//$row['Receipt No'] = $row['']; //variable_get('receipt_prefix', '').str_pad($row['Receipt No'], 7, "0", STR_PAD_LEFT);
 
 			if ( $row['Course'] == '' )
 				$row['Course'] = 'Non Course';
