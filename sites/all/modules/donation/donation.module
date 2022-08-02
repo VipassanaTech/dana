@@ -2124,7 +2124,7 @@ function donation_report_xls()
 		$append = " and d_createdBy='".$user->uid."'";
 	}
 
-	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'First Name',don.d_name as 'Last Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
+	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'Full Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 		d.d_receipt_f as 'Receipt No', 
 		don.d_id_no as 'Passport/ID',  
 		$txn_types_qry
@@ -2204,10 +2204,11 @@ function donation_report_xls()
 			if ( $row['Course'] == '' )
 				$row['Course'] = 'Non Course';
 
-			$temp = explode(" ", $row['First Name']);
-			$row['First Name'] = $temp[0];
+			//$temp = explode(" ", $row['First Name']);
+			/*$row['First Name'] = $temp[0];
 			if (isset($temp[1]))
 				$row['Last Name'] = $temp[1];
+			*/
 
             foreach( $txn_types_totals as $t )
             {
@@ -2275,17 +2276,18 @@ function donation_report_xls()
 	/* Formatting Excel */
 	$xls->getActiveSheet()->getColumnDimension('A')->setWidth(10);
 	$xls->getActiveSheet()->getColumnDimension('B')->setWidth(9);
-	$xls->getActiveSheet()->getColumnDimension('C')->setWidth(10);
-	$xls->getActiveSheet()->getColumnDimension('D')->setWidth(10);
-	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(20);
+	$xls->getActiveSheet()->getColumnDimension('C')->setWidth(20);
+	//$xls->getActiveSheet()->getColumnDimension('D')->setWidth(10);
+	$xls->getActiveSheet()->getColumnDimension('D')->setWidth(20);
+	$xls->getActiveSheet()->getColumnDimension('E')->setWidth(12);
 	$xls->getActiveSheet()->getColumnDimension('F')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('G')->setWidth(8);
 	$xls->getActiveSheet()->getColumnDimension('H')->setWidth(8);
-	$xls->getActiveSheet()->getColumnDimension('I')->setWidth(8);
+	$xls->getActiveSheet()->getColumnDimension('I')->setWidth(12);
 	$xls->getActiveSheet()->getColumnDimension('J')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('K')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('L')->setWidth(15);
-	$xls->getActiveSheet()->getColumnDimension('M')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('K')->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension('L')->setWidth(12);
+	$xls->getActiveSheet()->getColumnDimension('M')->setWidth(15);	
 	$xls->getActiveSheet()->getColumnDimension('N')->setWidth(15);	
 	$end = chr(ord('O')+count($txn_types_totals)-1);
 	$xls->getActiveSheet()->getColumnDimension('O:'.$end)->setWidth(7);
