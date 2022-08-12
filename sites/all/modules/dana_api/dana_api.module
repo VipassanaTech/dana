@@ -1,0 +1,50 @@
+<?php
+
+
+
+/**
+ * Implements hook_permission().
+ */
+function dana_api_permission() {
+
+	$perms['post receipts'] = array('title' => t('Post Receipts') ) ;
+	return $perms;
+}
+
+/**
+ * Implements hook_services_resources().
+ */
+function dana_api_services_resources() {
+
+  $resources = array(
+	'#api_version' => '3001',
+	'dana' => array(
+		'actions' => array(
+
+			'post-receipts' => array(
+				  'help' => t("Post Receipts"),
+				  'access arguments' => array('post receipts'),
+				  'access arguments append' => FALSE,
+				  'callback' => '_api_post_receipts',
+				  'args' => array(
+						array(
+							'name' => 'data',
+							'optional' => FALSE,
+							'source' => 'data',
+							'type' => 'json',
+							'description' => 'All receipt data',
+						),
+				  ),
+			),
+
+		),
+	 )
+  );
+
+  return $resources;
+}
+
+function _api_post_receipts( $data )
+{
+	return array('ret' => $data);
+}
