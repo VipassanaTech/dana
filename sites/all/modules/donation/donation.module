@@ -530,15 +530,17 @@ function _get_location_from_pincode()
 
 function _get_donor_detail()
 {
-	$name = $_REQUEST['name'];
+	//$name = $_REQUEST['name'];
+	$did = $_REQUEST['did'];
 	$course = $_REQUEST['course'];
 	$addr = $_REQUEST['addr'];
 	$course_type = '';
+	$matches = array();
 	if ( $course > 0)
   	   $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
 	$q = 'select d.*, co.c_name as \'country\', s.s_name, ci.c_city as \'city\' from dh_donor d left join dh_country co on d.d_country=co.c_code 
 		left join dh_state s on (d.d_state=s.s_code and d.d_country=s.s_country) left join dh_city ci on d.d_city=ci.c_id
-		where d.d_name like \'%'.$name.'%\'';
+		where d.d_id=\''.$did.'\' '; //d.d_name like \'%'.$name.'%\'
 	if (($course > 0) and ($course_type <> '1 Day Course'))
 		$q .= " and d_course='$course'";
 	$q .= " limit 0,1";
@@ -551,7 +553,8 @@ function _get_donor_detail()
   	}
 	if ( $addr == '0' ) 
 	{
-		unset($matches['address']);
+		if (!empty($matches))
+			unset($matches['address']);
 	}
   	drupal_json_output($matches);  	
   	exit(0);
@@ -630,14 +633,16 @@ function _get_donors( $name )
   
   	$single = array();
   	// add matches to $matches  
-  	foreach ($return as $row) {
-    	//$matches[] = array('label' => check_plain($row->d_name), 'value' => $row->d_id);
-    	if (property_exists($row, 'd_contact'))
-    		$matches[] = array('label' => $row->d_name.' - '.$row->d_contact, 'value' => $row->d_name);
-    	else	
-    		$matches[$row->d_name] = $row->d_name;
+  	foreach ($return as $row) 
+  	{
+	    	//$matches[] = array('label' => check_plain($row->d_name), 'value' => $row->d_id);
+	    	if (property_exists($row, 'd_contact'))
+	    		$matches[] = array('label' => $row->d_name.' - '.$row->d_contact, 'value' => $row->d_id);
+	    	else	
+	    		$matches[] = array('label' => $row->d_name, 'value' => $row->d_id);;
 
-    	$single[$row->d_name] = $row->d_name;
+	    	//$single[$row->d_name] = $row->d_name;
+	    	$single[] = array('label' => $row->d_name, 'value' => $row->d_id);;
   	}
   	
   	// return for JS
@@ -834,10 +839,11 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			});;
 		}
 
-		function get_donor_details( name )
+		function get_donor_details( donor_id )
 		{
 			var getaddr = 0;
-			$.getJSON("/get-donor-detail",{course: $("#edit-d-course").val(), name: name, addr: getaddr}, function(data){
+			$.getJSON("/get-donor-detail",{course: $("#edit-d-course").val(), did: donor_id, addr: getaddr}, function(data){
+				$("#edit-d-name").val(data[0].name);
 				$("#edit-d-country").val(data[0].country);
 				$("#edit-d-state").val(data[0].state);
 				$("#edit-d-city").val(data[0].city);
