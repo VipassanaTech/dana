@@ -2878,7 +2878,7 @@ function view_log_form( $form, &$form_state, $donation_id )
 	$rows = array();
 	while( $row = $hand->fetchAssoc())
 	{
-		$row['l_msg'] = nl2br($row['l_msg']);
+		$row['l_msg'] = nl2br(trim($row['l_msg']));
 		$rows[] = $row;
 	}
 	$headers = array('Log', 'DateTime', 'User');
