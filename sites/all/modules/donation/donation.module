@@ -649,8 +649,8 @@ function _get_donors( $name )
 	    	else	
 	    		$matches[] = array('label' => $row->d_name, 'value' => $row->d_id);;
 
-	    	//$single[$row->d_name] = $row->d_name;
-	    	$single[] = array('label' => $row->d_name, 'value' => $row->d_id);;
+	    	$single[$row->d_name] = $row->d_name;
+	    	//$single[] = array('label' => $row->d_name, 'value' => $row->d_id);;
   	}
   	
   	// return for JS
@@ -1963,6 +1963,7 @@ function donation_report_form($form, &$form_state)
 			        });
 				},
       			minLength: 1,
+
 			});
 			
 			$("a.delete-transaction").unbind("click");
