@@ -2613,10 +2613,22 @@ function process_donor_csv( $csv )
 function donation_income_tax_form($form, &$form_state)
 {
 	$years  = array('' => 'Choose');
-	$q = "select DISTINCT(date_format(d_date, '%Y')) as 'year' from dh_donation";
+	$q = "select DISTINCT(date_format(d_date, '%Y')) as 'year' from dh_donation order by d_date asc";
 	$hand = db_query($q);
+	$year=0;
 	while( $row = $hand->fetchAssoc() )
+	{
 		$years[$row['year']] = ($row['year'] - 1).' - '.$row['year'];
+		$year=$row['year'];
+	}
+	if($year>0)
+	{
+		$month = date('m');
+		if($month > 3)
+		{
+			$years[$year + 1] = $year.' - '.($year + 1);
+		} 
+	}
 	$form['financial_year'] =  array('#type' => 'select', '#title' => 'Select Financial Year', '#options' => $years, '#required' => 1);
 	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD', '#description' => 'Registration No and Date of Issuance can be setup in Settings');
 	return $form;
