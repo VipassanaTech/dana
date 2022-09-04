@@ -335,6 +335,15 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Tally Server'),
    );
 
+    $val = variable_get('tally_company', '');
+    $form['tally_company'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Tally Company'),
+         '#description' => t('Tally Company name to sync to'),
+   );
 
     $val = variable_get('tally_voucher_type_name', '');
     $form['tally_voucher_type_name'] = array(
