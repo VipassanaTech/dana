@@ -39,3 +39,26 @@
    text-decoration: line-through;
    font-weight: bold;
 }
+
+@media screen and (max-width: 950px) {
+    #page-wrapper {
+        min-width: 100% !important;
+    }
+
+    #main {
+        width: 100% !important;
+    }
+
+
+    #header div.section, #featured div.section, #messages div.section, #main, #triptych, #footer-columns, #footer {
+        width: 100% !important;
+    }
+
+    input#edit-d-address {
+        width: 100%;
+    }
+
+    input#edit-d-comment {
+        width: 100%;
+    }
+}
