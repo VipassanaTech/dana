@@ -1730,7 +1730,7 @@ function donation_report_form($form, &$form_state)
 			from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
 			left join dh_course c on d.d_course=c.c_id
 			left join users ud on d.d_deleted_by=ud.uid  
-			where d.d_id >0 ".$append ;
+			where d.d_id >0 ".$append." order by d_date, d_receipt_f" ;
 			//where d.d_deleted=0 ".$append ;
 
 		if (($from <> '') )  // &&  (($course == 0) || ($course == '')) ) 
