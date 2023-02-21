@@ -479,6 +479,8 @@ function donation_report()
 	$form_state['storage']['r_course'] = '';
 	$form_state['storage']['r_name'] = '';
 	$form_state['storage']['r_receipt'] = '';
+  $form_state['storage']['min_amount'] = '';
+  $form_state['storage']['max_amount'] = '';
 	$form_state['values'] = $form_state['storage'];
 	$out = drupal_build_form('donation_report_form',$form_state);
 
