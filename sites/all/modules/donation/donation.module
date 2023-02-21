@@ -475,7 +475,7 @@ function donation_report()
 	$form_state['storage']['r_to'] = date('Y-m-d');
 	$form_state['storage']['r_foreign'] = 'all';
 	$form_state['storage']['r_category'] = 'all';
-	$form_state['storage']['r_type'] = 'all';
+	$form_state['storage']['r_type'] = array('all');
 	$form_state['storage']['r_course'] = '';
 	$form_state['storage']['r_name'] = '';
 	$form_state['storage']['r_receipt'] = '';
@@ -1661,7 +1661,8 @@ function donation_report_form($form, &$form_state)
 
 	$form['r_type'] = array('#type' => 'select', '#title' => t('Type of Transaction'),  
 		'#options' => $txn_types, /*array('all' => t('All'), 'cash' => t('Cash'), 'cheque' => t('Cheque'), 'bank-transfer' => t('Bank Transfer'), 'card' => t('Credit/Debit Card') ),*/ 
-		'#default_value' => 'all', '#weight' => 1.6);
+    '#multiple' => true,
+		'#default_value' => array('all'), '#weight' => 1.6);
 
 
 	$form['r_course'] = array('#type' => 'select', '#title' => t('Course'),  
@@ -1790,6 +1791,12 @@ function donation_report_form($form, &$form_state)
 
 		if ($category <> 'all')
 			$q .= " and d.d_category = '$category' ";
+
+    if (!in_array('all', $txn_type))
+    {
+      $txn_type_string = "'" . implode ( "', '", $txn_type ) . "'";;
+      $q .= " and d.d_type in ($txn_type_string) ";
+    }
 
 		if ($txn_type <> 'all')
 			$q .= " and d.d_type = '$txn_type' ";
