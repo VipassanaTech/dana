@@ -1798,8 +1798,8 @@ function donation_report_form($form, &$form_state)
       $q .= " and d.d_type in ($txn_type_string) ";
     }
 
-		if ($txn_type <> 'all')
-			$q .= " and d.d_type = '$txn_type' ";
+		// if ($txn_type <> 'all')
+		// 	$q .= " and d.d_type = '$txn_type' ";
 
 		if ($course <> '')
 			$q .= " and d.d_course = '$course' ";
