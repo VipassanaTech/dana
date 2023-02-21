@@ -1685,6 +1685,26 @@ function donation_report_form($form, &$form_state)
 		'#options' => $created_by,
 		'#default_value' => '', '#weight' => 2.4);
 
+  $form['min_amount'] = array(
+    '#type' => 'textfield',
+    '#attributes' => array(
+        ' type' => 'number', // insert space before attribute name :)
+    ),
+    '#title' => t('Min Amount'),
+    '#maxlength' => 10,
+    '#default_value' => '',
+);
+
+  $form['max_amount'] = array(
+    '#type' => 'textfield',
+    '#attributes' => array(
+        ' type' => 'number', // insert space before attribute name :)
+    ),
+    '#title' => t('Max Amount'),
+    '#maxlength' => 10,
+    '#default_value' => '',
+);
+
 
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
 	if ( user_access("sync to tally") && (variable_get('tally_server', '') <> '') )
@@ -1722,6 +1742,9 @@ function donation_report_form($form, &$form_state)
 		   $r_user = $data['r_user'];
 		else
 		   $r_user = '';
+
+     $min_amount = $data['min_amount'];
+     $max_amount = $data['max_amount'];
 		
 		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted, '||', d_update_count) as 'Action 2', d_receipt_email as 'Action 3', d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 			CONCAT(d.d_id,'||',d.d_receipt_f,'||',d.d_receipt) as 'Receipt No', 
@@ -1737,6 +1760,13 @@ function donation_report_form($form, &$form_state)
 			left join users ud on d.d_deleted_by=ud.uid  
 			where d.d_id >0 ".$append ;
 			//where d.d_deleted=0 ".$append ;
+
+    if($min_amount <> '')
+      $q .= " and d.d_amount >= $min_amount ";
+
+    if($max_amount <> '')
+      $q .= " and d.d_amount <= $max_amount ";
+
 
 		if (($from <> '') )  // &&  (($course == 0) || ($course == '')) ) 
 			$q .= " and d.d_date >= '$from' ";
