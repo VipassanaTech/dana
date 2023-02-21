@@ -235,6 +235,11 @@ function donation_file_download($uri)
 function donation_admin_form($form, &$form_state)
 {
 
+  $form["set_receipt_paper"] = array('#type' => 'checkbox', '#title' => 'Set Paper as Default', '#default_value' => variable_get("set_receipt_paper", 0));
+  $form["set_receipt_email"] = array('#type' => 'checkbox', '#title' => 'Set Email as Default', '#default_value' => variable_get("set_receipt_email", 0));
+  $form["set_receipt_whatsapp"] = array('#type' => 'checkbox', '#title' => 'Set Whatsapp as Default', '#default_value' => variable_get("set_receipt_whatsapp", 0));
+
+
 	$query = "select c_code, c_name from dh_currency order by c_code";
 	$result = db_query( $query );
 	$currencies = array();
@@ -802,9 +807,9 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	
 	$form['d_comment'] = array('#type' => 'textfield', '#size' => 105, '#title' => 'Comment','#weight' => 11.1,'#default_value' => get_default('d_comment', $edit_data,'') );
 
-	$form['paper'] = array('#type' => 'checkbox', '#title' => 'Paper', '#weight' => 12.1,'#default_value' => 1);
-	$form['email'] = array('#type' => 'checkbox', '#title' => 'Email', '#weight' => 12.2,'#default_value' => 0);
-	$form['whatsapp'] = array('#type' => 'checkbox', '#title' => 'Whatsapp', '#weight' => 12.3,'#default_value' => 0);
+	$form['paper'] = array('#type' => 'checkbox', '#title' => 'Paper', '#weight' => 12.1,'#default_value' => variable_get("set_receipt_paper", 0));
+	$form['email'] = array('#type' => 'checkbox', '#title' => 'Email', '#weight' => 12.2,'#default_value' => variable_get("set_receipt_email", 0));
+	$form['whatsapp'] = array('#type' => 'checkbox', '#title' => 'Whatsapp', '#weight' => 12.3,'#default_value' => variable_get("set_receipt_whatsapp", 0));
 	$form['d_donor'] = array('#type' => 'hidden', '#value' =>  get_default('donor_id', $edit_data, '-1') );
 	$form['sub'] = array('#type' => 'submit', '#value' => get_default('submit',$edit_data,'Submit'), '#weight' => 13.1);
 	
