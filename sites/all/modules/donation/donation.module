@@ -1973,6 +1973,7 @@ function donation_report_form($form, &$form_state)
 			$out = '<div class="report-status"><h2>'.$total_recs.t(' transactions(s) found').'!</h2></div>';
 			$out .= '<h4>'.l(t("Download as Excel"), "donation-report/excel", 
 				array('query' => array('start' => $from, 'end' => $to, 'foreign' => $foreign, 'category' => $category, 'txn_type' => $txn_type, 
+          'min_amount' => $min_amount, 'max_amount' => $max_amount,
 							'course' => $course, 'name' => $donor, 'receipt' => $receipt, 'user' => $r_user)) ).'</h4>';
 			$out .= theme('table',array('header' => $headers, 'rows' => $rows));
 			$out .= '<div style="text-align: center"><h2> '.t('Grand Total').': '.$temp.'</h2></div>';
@@ -2079,6 +2080,9 @@ function donation_report_form_submit($form, &$form_state)
 		$params['foreign'] = $data['r_foreign'];
 		$params['category'] = $data['r_category'];
 		$params['txn_type'] = $data['r_type'];
+    $params['min_amount'] = $data['min_amount'];
+    $params['max_amount'] = $data['max_amount'];
+
 	     download_donor_master($params);
 	    //chdir("/dhamma/web/domains/donation");
 	    //exec("nohup /usr/bin/php dump-to-tally.php &");
@@ -2107,6 +2111,12 @@ function download_donor_master($params)
 		where d.d_id >0  and d.d_deleted = 0 ".$append ;
 		//where d.d_deleted=0 ".$append ;
 
+  if($params['min_amount'] <> '')
+    $q .= " and d.d_amount >= {$params['min_amount']} ";
+
+  if($params['max_amount'] <> '')
+    $q .= " and d.d_amount <= {$params['max_amount']} ";
+
 	if (($params['from'] <> '') )  // &&  (($course == 0) || ($course == '')) ) 
 		$q .= " and d.d_date >= '".$params['from']."' ";
 	if (($params['to'] <> '') ) //  && (($course == 0) || ($course == '') ) )
@@ -2126,8 +2136,16 @@ function download_donor_master($params)
 	if ($params['category'] <> 'all')
 		$q .= " and d.d_category = '".$params['category']."' ";
 
-	if ($params['txn_type'] <> 'all')
-		$q .= " and d.d_type = '".$params['txn_type']."' ";
+	// if ($params['txn_type'] <> 'all')
+	// 	$q .= " and d.d_type = '".$params['txn_type']."' ";
+
+
+  if (!in_array('all', $params['txn_type']))
+  {
+    $txn_type_string = "'" . implode ( "', '", $params['txn_type'] ) . "'";;
+    $q .= " and d.d_type in ($txn_type_string) ";
+  }
+
 
 	$q .= " group by d_name, d_contact, d_email, it_name, d_id_no";
 
@@ -2180,6 +2198,8 @@ function donation_report_xls()
 	$receipt = str_replace( variable_get('receipt_prefix', ''), '' ,$_REQUEST['receipt']);
 	$donor = $_REQUEST['name'];
 	$r_user = $_REQUEST['user'];
+  $min_amount = $_REQUEST['min_amount'];
+  $max_amount = $_REQUEST['max_amount'];
 
 	$txns = explode("\n", variable_get('txn_types', ""));
     $txn_types_qry = '';
@@ -2213,6 +2233,13 @@ function donation_report_xls()
 		left join dh_course c on d.d_course=c.c_id 
 		where  d.d_deleted=0 ".$append ;
 
+  if($min_amount <> '')
+    $q .= " and d.d_amount >= $min_amount ";
+
+  if($max_amount <> '')
+    $q .= " and d.d_amount <= $max_amount ";
+
+
 	if ( ($start <> ''))   // && ($course == ''))
 		$q .= " and d.d_date >= '$start' ";
 	if ( ($end <> '') )     //&& ($course == ''))
@@ -2232,8 +2259,11 @@ function donation_report_xls()
 	if ($category <> 'all')
 		$q .= " and d.d_category = '$category' ";
 
-	if ($txn_type <> 'all')
-		$q .= " and d.d_type = '$txn_type' ";
+  if (!in_array('all', $txn_type))
+  {
+    $txn_type_string = "'" . implode ( "', '", $txn_type ) . "'";;
+    $q .= " and d.d_type in ($txn_type_string) ";
+  }
 
 	if ($course <> '')
 		$q .= " and d.d_course = '$course' ";
