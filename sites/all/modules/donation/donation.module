@@ -1716,9 +1716,9 @@ function donation_report_form($form, &$form_state)
 
 
   $form['synced'] = array('#type' => 'checkbox', '#title' => 'Synced', '#weight' => 2.7,'#default_value' => 0);
-  $form['not_synced'] = array('#type' => 'checkbox', '#title' => 'Not Synced', '#weight' => 2.7,'#default_value' => 0);
-  $form['deleted'] = array('#type' => 'checkbox', '#title' => 'Deleted', '#weight' => 2.8,'#default_value' => 0);
-  $form['with_logs'] = array('#type' => 'checkbox', '#title' => 'With Logs', '#weight' => 2.9,'#default_value' => 0);
+  $form['not_synced'] = array('#type' => 'checkbox', '#title' => 'Not Synced', '#weight' => 2.8,'#default_value' => 0);
+  $form['deleted'] = array('#type' => 'checkbox', '#title' => 'Deleted', '#weight' => 2.9,'#default_value' => 0);
+  $form['with_logs'] = array('#type' => 'checkbox', '#title' => 'With Logs', '#weight' => 2.91,'#default_value' => 0);
 
 
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
