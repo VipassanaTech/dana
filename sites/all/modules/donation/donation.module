@@ -1718,7 +1718,7 @@ function donation_report_form($form, &$form_state)
   $form['synced'] = array('#type' => 'checkbox', '#title' => 'Synced', '#weight' => 2.7,'#default_value' => 0);
   $form['not_synced'] = array('#type' => 'checkbox', '#title' => 'Not Synced', '#weight' => 2.8,'#default_value' => 0);
   $form['deleted'] = array('#type' => 'checkbox', '#title' => 'Deleted', '#weight' => 2.9,'#default_value' => 0);
-  $form['with_logs'] = array('#type' => 'checkbox', '#title' => 'With Logs', '#weight' => 2.91,'#default_value' => 0);
+  $form['with_logs'] = array('#type' => 'checkbox', '#title' => 'Having Edit Logs', '#weight' => 2.91,'#default_value' => 0);
 
 
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
@@ -1780,6 +1780,9 @@ function donation_report_form($form, &$form_state)
 			left join users ud on d.d_deleted_by=ud.uid  
 			where d.d_id >0 ".$append ;
 			//where d.d_deleted=0 ".$append ;
+
+    if($with_logs == 1)
+      $q .= " and d.d_update_count > 0 ";
 
     if($synced == 1)
       $q .= " and d.d_synced = 1 ";
@@ -2141,6 +2144,9 @@ function download_donor_master($params)
 		where d.d_id >0  and d.d_deleted = 0 ".$append ;
 		//where d.d_deleted=0 ".$append ;
 
+  if($params['with_logs'] == 1)
+    $q .= " and d.d_update_count > 0 ";
+
   if($params['synced'] == 1)
     $q .= " and d.d_synced = 1 ";
 
@@ -2278,6 +2284,9 @@ function donation_report_xls()
 		left join dh_course c on d.d_course=c.c_id 
 		where  d.d_deleted=0 ".$append ;
 
+
+  if($with_logs == 1)
+    $q .= " and d.d_update_count > 0 ";
 
   if($synced == 1)
     $q .= " and d.d_synced = 1 ";
