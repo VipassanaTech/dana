@@ -3,12 +3,13 @@
 .form-item-d-course,.form-item-d-email,.form-item-d-date,.form-item-d-foreign,.form-item-d-date,.form-item-d-gender,
 .form-item-r-from,.form-item-r-to,.form-item-r-foreign,.form-item-r-category,.form-item-r-type,
 .form-item-d-type,.form-item-d-category,.form-item-r-name,.form-item-r-course,.form-item-r-receipt, .form-item-r-name, .form-item-r-user,
-.form-item-d-tax-payer,.form-item-d-id-type, .form-item-min-amount, .form-item-max-amount{
+.form-item-d-tax-payer,.form-item-d-id-type, .form-item-min-amount, .form-item-max-amount,
+.form-item-synced, .form-item-not_synced, .form-item-deleted, .form-item-with_logs{
 	float: left; 
 	margin-right: 25px;
 }
 
-.form-item-min-amount { clear: left;}
+.form-item-min-amount, .form-item-synced { clear: left;}
 
 .form-item-d-name,.form-item-d-country,.form-item-d-contact,.form-item-d-date,.form-item-d-amount,
 .form-item-r-course,.form-item-d-comment, .form-item-d-name, .form-item-d-tax-payer, .form-item-d-id-type { clear: left;}

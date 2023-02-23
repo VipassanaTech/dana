@@ -481,6 +481,10 @@ function donation_report()
 	$form_state['storage']['r_receipt'] = '';
   $form_state['storage']['min_amount'] = '';
   $form_state['storage']['max_amount'] = '';
+  $form_state['storage']['synced'] = 0;
+  $form_state['storage']['not_synced'] = 0;
+  $form_state['storage']['deleted'] = 0;
+  $form_state['storage']['with_logs'] = 0;
 	$form_state['values'] = $form_state['storage'];
 	$out = drupal_build_form('donation_report_form',$form_state);
 
@@ -1711,6 +1715,12 @@ function donation_report_form($form, &$form_state)
 );
 
 
+  $form['synced'] = array('#type' => 'checkbox', '#title' => 'Synced', '#weight' => 2.7,'#default_value' => 0);
+  $form['not_synced'] = array('#type' => 'checkbox', '#title' => 'Not Synced', '#weight' => 2.7,'#default_value' => 0);
+  $form['deleted'] = array('#type' => 'checkbox', '#title' => 'Deleted', '#weight' => 2.8,'#default_value' => 0);
+  $form['with_logs'] = array('#type' => 'checkbox', '#title' => 'With Logs', '#weight' => 2.9,'#default_value' => 0);
+
+
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
 	if ( user_access("sync to tally") && (variable_get('tally_server', '') <> '') )
 		$form['sub2'] = array('#type' => 'submit', '#value' => 'Sync to Tally', '#weight' => 6.2);
@@ -1750,6 +1760,11 @@ function donation_report_form($form, &$form_state)
 
      $min_amount = $data['min_amount'];
      $max_amount = $data['max_amount'];
+
+     $synced = $data['synced'];
+     $not_synced = $data['not_synced'];
+     $deleted = $data['deleted'];
+     $with_logs = $data['with_logs'];
 		
 		$q = "select CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted, '||', d_update_count) as 'Action 2', d_receipt_email as 'Action 3', d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 			CONCAT(d.d_id,'||',d.d_receipt_f,'||',d.d_receipt) as 'Receipt No', 
@@ -1765,6 +1780,15 @@ function donation_report_form($form, &$form_state)
 			left join users ud on d.d_deleted_by=ud.uid  
 			where d.d_id >0 ".$append ;
 			//where d.d_deleted=0 ".$append ;
+
+    if($synced == 1)
+      $q .= " and d.d_synced = 1 ";
+
+    if($not_synced == 1)
+      $q .= " and d.d_synced = 0 ";
+
+    if($deleted == 1)
+      $q .= " and d.d_deleted = 1 ";
 
     if($min_amount <> '')
       $q .= " and d.d_amount >= $min_amount ";
@@ -1974,6 +1998,7 @@ function donation_report_form($form, &$form_state)
 			$out .= '<h4>'.l(t("Download as Excel"), "donation-report/excel", 
 				array('query' => array('start' => $from, 'end' => $to, 'foreign' => $foreign, 'category' => $category, 'txn_type' => $txn_type, 
           'min_amount' => $min_amount, 'max_amount' => $max_amount,
+          'synced' => $synced, 'not_synced' => $not_synced, 'deleted' => $deleted, 'with_logs' => $with_logs,
 							'course' => $course, 'name' => $donor, 'receipt' => $receipt, 'user' => $r_user)) ).'</h4>';
 			$out .= theme('table',array('header' => $headers, 'rows' => $rows));
 			$out .= '<div style="text-align: center"><h2> '.t('Grand Total').': '.$temp.'</h2></div>';
@@ -2083,6 +2108,11 @@ function donation_report_form_submit($form, &$form_state)
     $params['min_amount'] = $data['min_amount'];
     $params['max_amount'] = $data['max_amount'];
 
+    $params['synced'] = $data['synced'];
+    $params['not_synced'] = $data['not_synced'];
+    $params['deleted'] = $data['deleted'];
+    $params['with_logs'] = $data['with_logs'];
+
 	     download_donor_master($params);
 	    //chdir("/dhamma/web/domains/donation");
 	    //exec("nohup /usr/bin/php dump-to-tally.php &");
@@ -2110,6 +2140,16 @@ function download_donor_master($params)
 		left join dh_id_types it on (don.d_id_type=it.it_name)
 		where d.d_id >0  and d.d_deleted = 0 ".$append ;
 		//where d.d_deleted=0 ".$append ;
+
+  if($params['synced'] == 1)
+    $q .= " and d.d_synced = 1 ";
+
+  if($params['not_synced'] == 1)
+    $q .= " and d.d_synced = 0 ";
+
+  if($params['deleted'] == 1)
+    $q .= " and d.d_deleted = 1 ";
+
 
   if($params['min_amount'] <> '')
     $q .= " and d.d_amount >= {$params['min_amount']} ";
@@ -2201,6 +2241,11 @@ function donation_report_xls()
   $min_amount = $_REQUEST['min_amount'];
   $max_amount = $_REQUEST['max_amount'];
 
+  $synced = $_REQUEST['synced'];
+  $not_synced = $_REQUEST['not_synced'];
+  $deleted = $_REQUEST['deleted'];
+  $with_logs = $_REQUEST['with_logs'];
+
 	$txns = explode("\n", variable_get('txn_types', ""));
     $txn_types_qry = '';
     $txn_types_totals = array();
@@ -2232,6 +2277,17 @@ function donation_report_xls()
 		left join dh_city ci on don.d_city=ci.c_id left join dh_state st on (don.d_state=st.s_code AND don.d_country=st.s_country) left join dh_country cy on don.d_country=cy.c_code
 		left join dh_course c on d.d_course=c.c_id 
 		where  d.d_deleted=0 ".$append ;
+
+
+  if($synced == 1)
+    $q .= " and d.d_synced = 1 ";
+
+  if($not_synced == 1)
+    $q .= " and d.d_synced = 0 ";
+
+  if($deleted == 1)
+    $q .= " and d.d_deleted = 1 ";
+
 
   if($min_amount <> '')
     $q .= " and d.d_amount >= $min_amount ";
