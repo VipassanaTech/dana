@@ -1875,6 +1875,9 @@ function donation_report_form($form, &$form_state)
 				}
 				$vals = array_values($row);
 				$temp = explode("||", $row['Receipt No']);
+
+        $synced_date = $row['Synced_Date'];
+        unset($row['Synced_Date']);
 				if ( isset($temp[2]) && ($temp[2] <> ''))
 				{
 					//$a = variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
@@ -1891,7 +1894,7 @@ function donation_report_form($form, &$form_state)
 					if (($temp[1] == 0) && (!$row_deleted))
 						$row['Action 1'] = l(t("Edit"), "donation/edit/".$temp[0]);
           else if ( ($row['Txn Type'] <> 'razorpay') && ($temp[1] == 1) && user_access('edit delete after tally sync') && (!$row_deleted))
-            $row['Action 1'] = l(t("Edit"), "donation/edit/".$temp[0])."\nSynced: ".$row['Synced_Date'];
+            $row['Action 1'] = l(t("Edit"), "donation/edit/".$temp[0])."\nSynced: ".$synced_date;
 					else
 						$row['Action 1'] = t('Synced');					
 				}
@@ -1904,7 +1907,7 @@ function donation_report_form($form, &$form_state)
 					if (($temp[1] == 0) && (!$row_deleted))
 						$row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], array('attributes' => array('class' => array('delete-transaction') ) ) );
           else if ( ($row['Txn Type'] <> 'razorpay') &&  ($temp[1] == 1) && user_access('edit delete after tally sync') && (!$row_deleted))
-            $row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], array('attributes' => array('class' => array('delete-transaction') ) ) )."\nSynced: ".$row['Synced_Date'];
+            $row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], array('attributes' => array('class' => array('delete-transaction') ) ) )."\nSynced: ".$synced_date;
 					else
 						$row['Action 2'] = t('Synced');					
 				}
