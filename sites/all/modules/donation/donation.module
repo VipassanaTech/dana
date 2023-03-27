@@ -1726,7 +1726,7 @@ function donation_report_form($form, &$form_state)
   $form['photo_id'] = array(
     '#type' => 'textfield',
     '#title' => t('Photo ID'),
-    '#maxlength' => 12,
+    '#maxlength' => 15,
     '#default_value' => '',
     '#weight' => 2.61,
 );
