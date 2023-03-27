@@ -488,6 +488,7 @@ function donation_report()
 	$form_state['storage']['r_receipt'] = '';
   $form_state['storage']['min_amount'] = '';
   $form_state['storage']['max_amount'] = '';
+  $form_state['storage']['photo_id'] = '';
   $form_state['storage']['synced'] = 0;
   $form_state['storage']['not_synced'] = 0;
   $form_state['storage']['deleted'] = 0;
@@ -1722,6 +1723,15 @@ function donation_report_form($form, &$form_state)
 );
 
 
+  $form['photo_id'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Photo ID'),
+    '#maxlength' => 12,
+    '#default_value' => '',
+    '#weight' => 2.61,
+);
+
+
   $form['synced'] = array('#type' => 'checkbox', '#title' => 'Synced', '#weight' => 2.7,'#default_value' => 0);
   $form['not_synced'] = array('#type' => 'checkbox', '#title' => 'Not Synced', '#weight' => 2.8,'#default_value' => 0);
   $form['deleted'] = array('#type' => 'checkbox', '#title' => 'Deleted', '#weight' => 2.9,'#default_value' => 0);
@@ -1768,6 +1778,8 @@ function donation_report_form($form, &$form_state)
      $min_amount = $data['min_amount'];
      $max_amount = $data['max_amount'];
 
+     $photo_id = trim($data['photo_id']);
+
      $synced = $data['synced'];
      $not_synced = $data['not_synced'];
      $deleted = $data['deleted'];
@@ -1805,6 +1817,9 @@ function donation_report_form($form, &$form_state)
 
     if($max_amount <> '')
       $q .= " and d.d_amount <= $max_amount ";
+
+    if($photo_id <> '')
+      $q .= " and don.d_id_no = '$photo_id' ";
 
 
 		if (($from <> '') )  // &&  (($course == 0) || ($course == '')) ) 
@@ -2015,6 +2030,7 @@ function donation_report_form($form, &$form_state)
 			$out .= '<h4>'.l(t("Download as Excel"), "donation-report/excel", 
 				array('query' => array('start' => $from, 'end' => $to, 'foreign' => $foreign, 'category' => $category, 'txn_type' => $txn_type, 
           'min_amount' => $min_amount, 'max_amount' => $max_amount,
+          'photo_id' => $photo_id,
           'synced' => $synced, 'not_synced' => $not_synced, 'deleted' => $deleted, 'with_logs' => $with_logs,
 							'course' => $course, 'name' => $donor, 'receipt' => $receipt, 'user' => $r_user)) ).'</h4>';
 			$out .= theme('table',array('header' => $headers, 'rows' => $rows));
@@ -2124,6 +2140,7 @@ function donation_report_form_submit($form, &$form_state)
 		$params['txn_type'] = $data['r_type'];
     $params['min_amount'] = $data['min_amount'];
     $params['max_amount'] = $data['max_amount'];
+    $params['photo_id'] = $data['photo_id'];
 
     $params['synced'] = $data['synced'];
     $params['not_synced'] = $data['not_synced'];
@@ -2176,6 +2193,9 @@ function download_donor_master($params)
 
   if($params['max_amount'] <> '')
     $q .= " and d.d_amount <= {$params['max_amount']} ";
+
+  if($params['photo_id'] <> '')
+    $q .= " and don.d_id_no = {$params['photo_id']} ";
 
 	if (($params['from'] <> '') )  // &&  (($course == 0) || ($course == '')) ) 
 		$q .= " and d.d_date >= '".$params['from']."' ";
@@ -2260,6 +2280,7 @@ function donation_report_xls()
 	$r_user = $_REQUEST['user'];
   $min_amount = $_REQUEST['min_amount'];
   $max_amount = $_REQUEST['max_amount'];
+  $photo_id = $_REQUEST['photo_id'];
 
   $synced = $_REQUEST['synced'];
   $not_synced = $_REQUEST['not_synced'];
@@ -2317,6 +2338,9 @@ function donation_report_xls()
 
   if($max_amount <> '')
     $q .= " and d.d_amount <= $max_amount ";
+
+  if($photo_id <> '')
+    $q .= " and don.d_id_no = '$photo_id' ";
 
 
 	if ( ($start <> ''))   // && ($course == ''))
