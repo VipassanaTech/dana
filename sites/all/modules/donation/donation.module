@@ -1730,6 +1730,7 @@ function donation_report_form($form, &$form_state)
 	$form['r_type'] = array('#type' => 'select', '#title' => t('Type of Transaction'),  
 		'#options' => $txn_types, /*array('all' => t('All'), 'cash' => t('Cash'), 'cheque' => t('Cheque'), 'bank-transfer' => t('Bank Transfer'), 'card' => t('Credit/Debit Card') ),*/ 
     '#multiple' => true,
+    '#size' => 30,
 		'#weight' => 1.6);
 
     $tags = db_query("select t_id, t_tag from dh_tag")->fetchAllKeyed();
@@ -1737,7 +1738,8 @@ function donation_report_form($form, &$form_state)
     $form['r_tags'] = array('#type' => 'select', '#title' => t('Tags'),
     '#options' => $tags,
     '#multiple' => true,
-    '#weight' => 1.6);
+    '#size' => 30,
+    '#weight' => 1.61);
 
 
 	$form['r_course'] = array('#type' => 'select', '#title' => t('Course'),  
@@ -2258,8 +2260,8 @@ function donation_report_form($form, &$form_state)
         }
         });
 
-      $("#edit-r-type").select2();
-      $("#edit-r-tags").select2();
+      $("#edit-r-type").select2({width: "400px"});
+      $("#edit-r-tags").select2({width: "400px"});
 
 
     $("#createtags").unbind("click");
