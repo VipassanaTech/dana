@@ -2617,8 +2617,8 @@ function download_donor_master($params)
 	$q = "select don.d_name 'Name', don.d_contact as 'Mobile', don.d_email as 'Email', it.it_name as 'ID Type', 
 		 don.d_id_no as 'ID No'
 		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
-		left join dh_id_types it on (don.d_id_type=it.it_name)
     left join dh_donation_tag dt on d.d_id=dt.dt_donation
+		left join dh_id_types it on (don.d_id_type=it.it_code)
 		where d.d_id >0  and d.d_deleted = 0 ".$append ;
 		//where d.d_deleted=0 ".$append ;
 
