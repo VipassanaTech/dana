@@ -1735,11 +1735,22 @@ function donation_report_form($form, &$form_state)
 
     $tags = db_query("select t_id, t_tag from dh_tag")->fetchAllKeyed();
 
-    $form['r_tags'] = array('#type' => 'select', '#title' => t('Tags'),
-    '#options' => $tags,
-    '#multiple' => true,
-    '#size' => 30,
-    '#weight' => 1.61);
+    if(user_access("view donation tags"))
+    {
+      $form['r_tags'] = array('#type' => 'select', '#title' => t('Tags'),
+        '#options' => $tags,
+        '#multiple' => true,
+        '#size' => 30,
+        '#weight' => 1.61);
+    }
+    else
+    {
+      $form['r_tags'] = array(
+        '#type' => 'hidden',
+        '#value' => null,
+        '#weight' => 1.61);
+    }
+
 
 
 	$form['r_course'] = array('#type' => 'select', '#title' => t('Course'),  
