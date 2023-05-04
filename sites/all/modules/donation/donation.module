@@ -3292,7 +3292,7 @@ function donation_income_tax_form($form, &$form_state)
 		} 
 	}
 	$form['financial_year'] =  array('#type' => 'select', '#title' => 'Select Financial Year', '#options' => $years, '#required' => 1);
-	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD', '#description' => 'Registration No and Date of Issuance can be setup in Settings.<br/>Donations marked as Foreign are not included.');
+	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD', '#suffix' => 'Registration No and Date of Issuance can be setup in Settings.<br/>Donations marked as Foreign are not included.');
 	return $form;
 }
 
