@@ -3252,7 +3252,7 @@ function process_donor_csv( $csv )
 	    			continue;
 			if (count($data) < 5)
 				continue;
-			if ( ! in_array($data[3], array_keys($it_types) ))
+			if ( ! in_array(strtoupper($data[3]), array_keys($it_types) ))
 				continue;
 			$d = array();			
 			$d['d_id_type'] = $it_types[strtoupper($data[3])];
