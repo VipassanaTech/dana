@@ -1162,8 +1162,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			$("#edit-d-course").focus();
 			$("#edit-chequecardbank-transfer").hide();
 			$(".form-item-d-currency").hide();
-			$("#edit-d-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-1Y", maxDate: 0});
-                        $("#edit-d-chq-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-6M", maxDate: "6M"});
+			$("#edit-d-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-18M", maxDate: 0});
+                        $("#edit-d-chq-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-18M", maxDate: "6M"});
 
 			$("input[name=\"d_type\"]:radio").change(function(){
             	//alert("called");
