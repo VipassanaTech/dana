@@ -3312,7 +3312,15 @@ function generate_10bd( $year )
 
      $id_codes = array(1 => 'Permanent Account Number', 2 => 'Aadhaar Number', 3 => 'Tax Identification Number', 4 => 'Passport number', 5 => "Elector's photo identity number", 6 => 'Driving License number', 7 => 'Ration card number' );
 
-	$q = "select 1 as 'Sl. No.', '' as 'Pre Acknowledgement Number', don.d_id_type as 'ID Code', don.d_id_no as 'Unique Identification Number', 'Section 80G' as 'Section Code', '$urn' as 'Unique Registration Number (URN)', '$urn_date' as 'Date of Issuance of Unique Registration Number', don.d_name as 'Name of Donor', don.d_address as 'Address of donor', d.d_category, IF (d.d_type = 'cash', 'Cash', 'Electronic modes including account payee cheque/draft') as 'Mode of Receipt', SUM(d.d_amount) as 'Amount of donation (Indian rupees)' from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d_deleted=0 and d_foreign=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
+  $q = "select 1 as 'Sl. No.', '' as 'Pre Acknowledgement Number', don.d_id_type as 'ID Code', don.d_id_no as 'Unique Identification Number', 'Section 80G' as 'Section Code', '$urn' as 'Unique Registration Number (URN)', '$urn_date' as 'Date of Issuance of Unique Registration Number', don.d_name as 'Name of Donor',
+    CONCAT(IFNULL(don.d_address, ''), ', ', IFNULL(c.c_city, ''), ', ', IFNULL(s.s_name, ''), ', pin - ', IFNULL(don.d_pincode, '')) as 'Address of donor',
+    d.d_category, IF (d.d_type = 'cash', 'Cash', 'Electronic modes including account payee cheque/draft') as 'Mode of Receipt', SUM(d.d_amount) as 'Amount of donation (Indian rupees)'
+    from dh_donation d
+    left join dh_donor don on (d.d_donor=don.d_id)
+    left join dh_city c on (don.d_city=c.c_id)
+    left join dh_state s on (don.d_state=s.s_code and don.d_country=s.s_country)
+    where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d_deleted=0 and d_foreign=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
+
 	$result = db_query($q);
 	$header = array('Sl. No.', 'Pre Acknowledgement Number', 'ID Code', 'Unique Identification Number', 'Section Code', 'Unique Registration Number (URN)', 'Date of Issuance of Unique Registration Number', 'Name of Donor', 'Address of Donor', 'Donation Type', 'Mode of Receipt', 'Amount of donation (Indian rupees)');
 	$fname = tempnam(sys_get_temp_dir(), "it10bd");
