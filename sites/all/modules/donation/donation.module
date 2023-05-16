@@ -532,6 +532,7 @@ function donation_report()
 	$form_state['storage']['r_to'] = date('Y-m-d');
 	$form_state['storage']['r_foreign'] = 'all';
 	$form_state['storage']['r_category'] = 'all';
+  $form_state['storage']['r_id_type'] = 'all';
 	$form_state['storage']['r_type'] = array();
   $form_state['storage']['r_tags'] = array();
 	$form_state['storage']['r_course'] = '';
@@ -1727,6 +1728,12 @@ function donation_report_form($form, &$form_state)
                 '#options' => $cost_categories,
                 '#default_value' => 'all', '#weight' => 1.5 );
 
+  $id_type = array_merge(array('all' => t('All') ) ,db_query("select it_code, it_name from dh_id_types")->fetchAllKeyed());
+
+  $form['r_id_type'] = array('#type' => 'select', '#title' => t('ID Type'),
+        '#options' => $id_type,
+        '#default_value' => 'all', '#weight' => 1.51 );
+
 	$form['r_type'] = array('#type' => 'select', '#title' => t('Type of Transaction'),  
 		'#options' => $txn_types, /*array('all' => t('All'), 'cash' => t('Cash'), 'cheque' => t('Cheque'), 'bank-transfer' => t('Bank Transfer'), 'card' => t('Credit/Debit Card') ),*/ 
     '#multiple' => true,
@@ -1899,6 +1906,7 @@ function donation_report_form($form, &$form_state)
 		$to = $data['r_to'];
 		$foreign = $data['r_foreign'];
 		$category = $data['r_category'];
+    $id_type = $data['r_id_type'];
 		$txn_type = $data['r_type'];
     $don_tags = $data['r_tags'];
 		$course = $data['r_course'];
@@ -1976,6 +1984,9 @@ function donation_report_form($form, &$form_state)
 
 		if ($category <> 'all')
 			$q .= " and d.d_category = '$category' ";
+
+    if ($id_type <> 'all')
+      $q .= " and don.d_id_type = '$id_type' ";
 
     if ($txn_type)
     {
@@ -2179,7 +2190,9 @@ function donation_report_form($form, &$form_state)
 			
 			$out = '<div class="report-status"><h2>'.$total_recs.t(' transactions(s) found').'!</h2></div>';
 			$out .= '<h4>'.l(t("Download as Excel"), "donation-report/excel", 
-				array('query' => array('start' => $from, 'end' => $to, 'foreign' => $foreign, 'category' => $category, 'txn_type' => $txn_type, 
+				array('query' => array('start' => $from, 'end' => $to, 'foreign' => $foreign, 'category' => $category,
+          'id_type' => $id_type,
+          'txn_type' => $txn_type,
           'don_tags' => $don_tags,
           'min_amount' => $min_amount, 'max_amount' => $max_amount,
           'photo_id' => $photo_id,
@@ -2594,6 +2607,7 @@ function donation_report_form_submit($form, &$form_state)
 		$params['to'] = $data['r_to'];
 		$params['foreign'] = $data['r_foreign'];
 		$params['category'] = $data['r_category'];
+    $params['id_type'] = $data['r_id_type'];
 		$params['txn_type'] = $data['r_type'];
     $params['don_tags'] = $data['r_tags'];
     $params['min_amount'] = $data['min_amount'];
@@ -2676,6 +2690,9 @@ function download_donor_master($params)
 	if ($params['category'] <> 'all')
 		$q .= " and d.d_category = '".$params['category']."' ";
 
+  if ($params['id_type'] <> 'all')
+    $q .= " and don.d_id_type = '".$params['id_type']."' ";
+
 	// if ($params['txn_type'] <> 'all')
 	// 	$q .= " and d.d_type = '".$params['txn_type']."' ";
 
@@ -2738,6 +2755,7 @@ function donation_report_xls()
 	$start = $_REQUEST['start'];
 	$end = $_REQUEST['end'];
 	$category = $_REQUEST['category'];
+  $id_type = $_REQUEST['id_type'];
 	$txn_type = $_REQUEST['txn_type'];
   $don_tags = $_REQUEST['don_tags'];
 	$foreign = $_REQUEST['foreign'];
@@ -2829,6 +2847,9 @@ function donation_report_xls()
 
 	if ($category <> 'all')
 		$q .= " and d.d_category = '$category' ";
+
+  if ($id_type <> 'all')
+    $q .= " and don.d_id_type = '$id_type' ";
 
   if ($txn_type)
   {
