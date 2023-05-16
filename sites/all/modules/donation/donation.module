@@ -1728,7 +1728,8 @@ function donation_report_form($form, &$form_state)
                 '#options' => $cost_categories,
                 '#default_value' => 'all', '#weight' => 1.5 );
 
-  $id_type = array_merge(array('all' => t('All') ) ,db_query("select it_code, it_name from dh_id_types")->fetchAllKeyed());
+  $id_type = db_query("select it_code, it_name from dh_id_types")->fetchAllKeyed();
+  $id_type = array_merge(array('all' => t('All') ) , $id_type);
 
   $form['r_id_type'] = array('#type' => 'select', '#title' => t('ID Type'),
         '#options' => $id_type,
