@@ -44,6 +44,7 @@ function donation_permission()
   $perms['delete donation tags'] = array("title" => 'Delete Donation Tags');
   $perms['assign donation tags'] = array("title" => 'Assign Donation Tags');
   $perms['unassign donation tags'] = array("title" => 'Unassign Donation Tags');
+  $perms['access donor'] = array('title' => t('Access Donor Details') );
 
 	return $perms;
 }
