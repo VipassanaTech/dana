@@ -107,7 +107,7 @@ function donation_menu()
 
 	$items['get-donor-detail'] = array( 'title' => t('Donors'),
 	       'page callback' => '_get_donor_detail',
-	       'access arguments' => array('access donation'),
+	       'access arguments' => array('access donor'),
 	       'type' => MENU_CALLBACK);
 
 	$items['save-positions'] = array( 'title' => t('Donors'),
