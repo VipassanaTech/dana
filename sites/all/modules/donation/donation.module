@@ -38,13 +38,13 @@ function donation_permission()
 	$perms['upload donor master'] = array('title' => 'Upload Donor Master');
 	$perms['access income tax report'] = array('title' => 'Access income tax report');
 	$perms['view log'] = array("title" => 'View Change log');
-  $perms['edit delete after tally sync'] = array('title' => 'Edit Delete After Tally Sync');
-  $perms['view donation tags'] = array("title" => 'View Donation Tags');
-  $perms['create donation tags'] = array("title" => 'Create Donation Tags');
-  $perms['delete donation tags'] = array("title" => 'Delete Donation Tags');
-  $perms['assign donation tags'] = array("title" => 'Assign Donation Tags');
-  $perms['unassign donation tags'] = array("title" => 'Unassign Donation Tags');
-  $perms['access donor'] = array('title' => t('Access Donor Details') );
+	$perms['edit delete after tally sync'] = array('title' => 'Edit Delete After Tally Sync');
+	$perms['view donation tags'] = array("title" => 'View Donation Tags');
+	$perms['create donation tags'] = array("title" => 'Create Donation Tags');
+	$perms['delete donation tags'] = array("title" => 'Delete Donation Tags');
+	$perms['assign donation tags'] = array("title" => 'Assign Donation Tags');
+	$perms['unassign donation tags'] = array("title" => 'Unassign Donation Tags');
+	$perms['access donor'] = array('title' => t('Access Donor Details') );
 
 	return $perms;
 }
@@ -3328,6 +3328,11 @@ function donation_income_tax_form_submit($form, &$form_state)
 	generate_10bd( $form_state['input']['financial_year'] );
 }
 
+function sanitize_10bd( $data )
+{
+	$ret = trim(preg_replace('/[^A-Za-z0-9\-,\. ]/', '', $data));
+	return trim($ret, ",.-");
+}
 
 function generate_10bd( $year )
 {
@@ -3338,9 +3343,9 @@ function generate_10bd( $year )
 
      $id_codes = array(1 => 'Permanent Account Number', 2 => 'Aadhaar Number', 3 => 'Tax Identification Number', 4 => 'Passport number', 5 => "Elector's photo identity number", 6 => 'Driving License number', 7 => 'Ration card number' );
 
-  $q = "select 1 as 'Sl. No.', '' as 'Pre Acknowledgement Number', don.d_id_type as 'ID Code', don.d_id_no as 'Unique Identification Number', 'Section 80G' as 'Section Code', '$urn' as 'Unique Registration Number (URN)', '$urn_date' as 'Date of Issuance of Unique Registration Number', don.d_name as 'Name of Donor',
+  $q = "select 1 as 'Sl. No.', '' as 'Pre Acknowledgement Number', don.d_id_type as 'ID Code', don.d_id_no as 'Unique Identification Number', 'Section 80G' as 'Section Code', '$urn' as 'Unique Registration Number (URN)', '$urn_date' as 'Date of Issuance of Unique Registration Number', don.d_name as 'Name of donor',
     CONCAT(IFNULL(don.d_address, ''), ', ', IFNULL(c.c_city, ''), ', ', IFNULL(s.s_name, ''), ', pin - ', IFNULL(don.d_pincode, '')) as 'Address of donor',
-    d.d_category, IF (d.d_type = 'cash', 'Cash', 'Electronic modes including account payee cheque/draft') as 'Mode of Receipt', SUM(d.d_amount) as 'Amount of donation (Indian rupees)'
+    d.d_category, IF (d.d_type = 'cash', 'Cash', 'Electronic modes including account payee cheque/draft') as 'Mode of receipt', SUM(d.d_amount) as 'Amount of donation (Indian rupees)'
     from dh_donation d
     left join dh_donor don on (d.d_donor=don.d_id)
     left join dh_city c on (don.d_city=c.c_id)
@@ -3348,7 +3353,7 @@ function generate_10bd( $year )
     where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d_deleted=0 and d_foreign=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category, IF (d.d_type = 'cash', 'cash', 'electronic') order by d_name";
 
 	$result = db_query($q);
-	$header = array('Sl. No.', 'Pre Acknowledgement Number', 'ID Code', 'Unique Identification Number', 'Section Code', 'Unique Registration Number (URN)', 'Date of Issuance of Unique Registration Number', 'Name of Donor', 'Address of Donor', 'Donation Type', 'Mode of Receipt', 'Amount of donation (Indian rupees)');
+	$header = array('Sl. No.', 'Pre Acknowledgement Number', 'ID Code', 'Unique Identification Number', 'Section Code', 'Unique Registration Number (URN)', 'Date of Issuance of Unique Registration Number', 'Name of donor', 'Address of donor', 'Donation Type', 'Mode of receipt', 'Amount of donation (Indian rupees)');
 	$fname = tempnam(sys_get_temp_dir(), "it10bd");
 	$fp = fopen($fname, "w");
 	fputcsv($fp, $header);
@@ -3361,7 +3366,9 @@ function generate_10bd( $year )
 		elseif (strstr( strtolower($row['d_category']), "general") || (strstr( strtolower($row['d_category']), "others")) )
 			$row['d_category'] = 'Others';
 		else
-			$row['d_category'] = 'Specific Grant';
+			$row['d_category'] = 'Specific grant';
+		$row['Name of donor'] = sanitize_10bd($row['Name of donor']);
+		$row['Address of donor'] = sanitize_10bd($row['Address of donor']);
 		$row['ID Code'] = $id_codes[$row['ID Code']];
 		fputcsv($fp, $row);
 	}
