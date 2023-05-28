@@ -1027,24 +1027,21 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		{
 			if (aadhaar == "" || aadhaar.length != 12) 
 			{
-				console.log("In here");
 				return false;
   			}
 
 			if (!/^\d+$/.test(aadhaar)) 
 			{
-				console.log("Number In here");
 				return false;
 			}
 
 			var regexp=/^[2-9]{1}[0-9]{3}[0-9]{4}[0-9]{4}$/;
 			if( ! regexp.test(aadhaar) )
 			{
-				console.log("Regexp In here");
 				return false;
 			}
   			// Check if the 12th digit is a valid check digit
-  			
+  			/*
 			var checkDigit = aadhaar.charAt(11);
 			var sum = 0;
 			for (var i = 0; i < 11; i++) 
@@ -1056,7 +1053,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			{
 				return false;
 			}
-			
+			*/			
 			// Aadhaar number is valid
 			return true;
 		}
