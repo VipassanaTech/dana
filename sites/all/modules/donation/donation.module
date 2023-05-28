@@ -1023,9 +1023,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			return res;					
 		}
 
-		function aadhaar_is_valid(input) 
+		function aadhaar_is_valid(aadhaar) 
 		{
-			var aadhaar = input.toString();
 			if (aadhaar == "" || aadhaar.length != 12) 
 			{
 				console.log("In here");
@@ -1088,7 +1087,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				}
 				else if ( $("#edit-d-id-type").val() == "2" )
 				{
-					if (! aadhaar_is_valid($("#edit-d-id-type").val()))
+					if (! aadhaar_is_valid($("#edit-d-id-no").val()))
 					{
 						res = false;
 						alert("Invalid Aadhaar no!");
