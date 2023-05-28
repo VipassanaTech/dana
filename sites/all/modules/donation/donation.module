@@ -1044,7 +1044,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				return false;
 			}
   			// Check if the 12th digit is a valid check digit
-  			/*
+  			
 			var checkDigit = aadhaar.charAt(11);
 			var sum = 0;
 			for (var i = 0; i < 11; i++) 
@@ -1056,7 +1056,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			{
 				return false;
 			}
-			*/
+			
 			// Aadhaar number is valid
 			return true;
 		}
