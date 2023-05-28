@@ -1023,6 +1023,35 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			return res;					
 		}
 
+		function aadhaar_is_valid(aadhaar) 
+		{
+			if (aadhaar == "" || aadhaar.length != 12) 
+			{
+				return false;
+  			}
+
+			if (!/^\d+$/.test(aadhaar)) 
+			{
+				return false;
+			}
+
+  			// Check if the 12th digit is a valid check digit
+			var checkDigit = aadhaar.charAt(11);
+			var sum = 0;
+			for (var i = 0; i < 11; i++) 
+			{
+				sum += parseInt(aadhaar.charAt(i)) * (12 - i);
+			}
+			var computedCheckDigit = (sum % 11 == 0) ? 0 : (11 - sum % 11);
+			if (checkDigit != computedCheckDigit.toString()) 
+			{
+				return false;
+			}
+
+			// Aadhaar number is valid
+			return true;
+		}
+
 		function check_id_no()
 		{
 			var res = true;
@@ -1046,6 +1075,15 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 						alert("Invalid PAN card no!");
 						$("#edit-d-id-no").focus();
 					}										
+				}
+				else if ( $("#edit-d-id-type").val() == "2" )
+				{
+					if (! aadhaar_is_valid($("#edit-d-id-type").val()))
+					{
+						res = false;
+						alert("Invalid Aadhaar no!");
+						$("#edit-d-id-no").focus();
+					}
 				}
 			}
 			else
