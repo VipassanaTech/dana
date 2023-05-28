@@ -899,6 +899,63 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		var file = "";
 		'.$a.'
 		var currentForm;
+		var aadhaar_d = [
+		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+		  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+		  [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+		  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+		  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+		  [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+		  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+		  [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+		  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+		  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+		];
+
+		// permutation table p
+		var aadhaar_p = [
+		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+		  [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+		  [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+		  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+		  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+		  [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+		  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+		  [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]
+		];
+
+		// inverse table inv
+		var aadhaar_inv = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9];
+
+		// converts string or number to an array and inverts it
+		function inv_array(array) 
+		{
+
+			if (Object.prototype.toString.call(array) === "[object Number]") 
+			{
+		    		array = String(array);
+			}
+
+			if (Object.prototype.toString.call(array) === "[object String]") 
+			{
+				array = array.split("").map(Number);
+			}
+
+			return array.reverse();
+		}
+
+		// validates checksum
+		function validate_aadhaar(array) 
+		{
+			var c = 0;
+			var invertedArray = inv_array(array);
+
+			for (var i = 0; i < invertedArray.length; i++) {
+				c = aadhaar_d[c][aadhaar_p[(i % 8)][invertedArray[i]]];
+			}
+
+			return (c === 0);
+		}
 
 
 		function get_positions()
@@ -1026,34 +1083,18 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		function aadhaar_is_valid(aadhaar) 
 		{
 			if (aadhaar == "" || aadhaar.length != 12) 
-			{
 				return false;
-  			}
 
 			if (!/^\d+$/.test(aadhaar)) 
-			{
 				return false;
-			}
 
 			var regexp=/^[2-9]{1}[0-9]{3}[0-9]{4}[0-9]{4}$/;
 			if( ! regexp.test(aadhaar) )
-			{
 				return false;
-			}
-  			// Check if the 12th digit is a valid check digit
-  			/*
-			var checkDigit = aadhaar.charAt(11);
-			var sum = 0;
-			for (var i = 0; i < 11; i++) 
-			{
-				sum += parseInt(aadhaar.charAt(i)) * (12 - i);
-			}
-			var computedCheckDigit = (sum % 11 == 0) ? 0 : (11 - sum % 11);
-			if (checkDigit != computedCheckDigit.toString()) 
-			{
-				return false;
-			}
-			*/			
+
+			if (! validate_aadhaar(aadhaar))
+				return false
+
 			// Aadhaar number is valid
 			return true;
 		}
