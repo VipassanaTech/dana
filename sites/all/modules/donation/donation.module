@@ -1036,7 +1036,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			}
 
 			var regexp=/^[2-9]{1}[0-9]{3}[0-9]{4}[0-9]{4}$/;
-			if( ! regexp.test(x) )
+			if( ! regexp.test(aadhaar) )
 			{
 				return false;
 			}
