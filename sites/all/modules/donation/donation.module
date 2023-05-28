@@ -1464,7 +1464,8 @@ function generate_receipt( $id, $amended )
 		$receipt_data['on-bank'] = '';
 		$receipt_data['ref-no'] = '';
 	}
-	if (in_array($row['d_category'], array('corpus', 'pagoda', 'Course - Corpus-C', 'Course - Pagoda-C', 'Other Than Courses - Pagoda', 'Other Than Courses - Corpus')))
+	//if (in_array($row['d_category'], array('corpus', 'pagoda', 'Course - Corpus-C', 'Course - Pagoda-C', 'Other Than Courses - Pagoda', 'Other Than Courses - Corpus')))
+	if (stristr($row['d_category'], "corpus"))
 		$receipt_data['not-corpus'] = '';
 	else
 		$receipt_data['not-corpus'] = 'not ';
