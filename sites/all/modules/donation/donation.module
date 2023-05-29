@@ -1701,6 +1701,35 @@ function send_donor_email( $id )
 	return array('success' => True, 'msg' => $mid);
 }
 
+
+function send_email_generic( $to, $subject, $body, $attachment = array() )
+{
+
+  $from = variable_get('donation_from', '').'<'.variable_get('donation_email', '').'>';
+  $mg = Mailgun::create(variable_get('mailgun_key', ''));
+
+  $options = array(
+    'from'    => $from,
+    'to'      => $to,  //info@dhamma.net.in
+    'subject' => $subject,
+    'html'    => $body,
+    'v:test-mode' => 0
+  );
+  if (variable_get('donation_email_bcc', ''))
+    $options['bcc'] = variable_get('donation_email_bcc', '');
+
+  if ( count($attachment) > 0)
+  {
+    foreach( $attachment as $a )
+      $options['attachment'][] = array('filePath' => $a, 'filename' => basename($a));
+  }
+  $res = $mg->messages()->send(variable_get('mailgun_primary_domain', ''), $options );
+  $mid = $res->getId();
+  watchdog('DanaSendEmailGeneric', "Email sent to ".$to." (".$mid.")");
+  return array('success' => True, 'msg' => $mid);
+}
+
+
 function get_country($name)
 {
    $q = "select c_code from dh_country where c_name='$name' limit 1";
