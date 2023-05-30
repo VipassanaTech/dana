@@ -33,6 +33,13 @@ if ( conf_path() == 'sites/default')
    exit(1);
 }
 
+if ( date('m') > 3 )
+  $fin = date('Y')."-".(date('Y')+1);
+else
+  $fin = (date('Y')-1)."-".date('Y');
+
+echo "financial year: $fin\n";
+
 $site = variable_get("site_name", "");
 echo $site."\n";
 if (($handle = fopen($csv_file, "r")) !== FALSE)
@@ -54,15 +61,21 @@ if (($handle = fopen($csv_file, "r")) !== FALSE)
 	   fputcsv($csv_p, $fields);
 	   $new_path = str_replace("unprocessed", "processed", $data[0]);
 	   $b_folder = dirname($new_path);
+     $tmp = explode("_", basename($data[0]));
+
 	   if ($row['d_email'])
 	   {
-		$tmp = explode("_", basename($data[0]));
-		$body = "Dear ".$tmp[1]."\n\nPlease find attached Form 10 BE for ".$site."\n\nRegards,\n-Accounts Team\n($site)\n";
-		//echo "Attachmein is ".$data[0];
-		send_email_generic("anand@vridhamma.org", $site." - Form 10 BE", nl2br($body), array($data[0]));
+  		$body = "Dear ".$tmp[1]."\n\nPlease find attached Form 10 BE for financial year ".$fin."\n\nRegards,\n-Accounts Team\n($site)\n";
+  		send_email_generic($row['d_email'], $site." - Form 10 BE", nl2br($body), array($data[0]));
 	   }
+     if ($row['d_contact'])
+     {
+      send_whatsapp_generic($row['d_contact'], "form_10be_2", array($tmp[1], $fin, $site), $data[0]);
+     }
+
 	   if (! file_exists($b_folder))
-		mkdir($b_folder, 0755, true);
+		    mkdir($b_folder, 0755, true);
+
 	   rename($data[0], $new_path);
 	}
 	else
