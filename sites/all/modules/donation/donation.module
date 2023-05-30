@@ -1757,6 +1757,7 @@ function send_whatsapp_generic( $contact, $template, $params_body, $file = null 
     }
 
     $response = send_whatsapp_360($wa_id, $template, $params_header, $params_body, $file_name );
+    watchdog('DanaSendWhatsappGeneric', "Whatsapp sent to ".$contact." (".$response.")");
     if ($response)
     {
       $ret['success'] = True;
