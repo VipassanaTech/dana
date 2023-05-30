@@ -70,7 +70,7 @@ if (($handle = fopen($csv_file, "r")) !== FALSE)
 	   }
      if ($row['d_contact'])
      {
-      send_whatsapp_generic($row['d_contact'], "form_10be_2", array($tmp[1], $fin, $site), $data[0]);
+      send_whatsapp_generic($row['d_contact'], "form_10be_quick", array($tmp[1], $fin, $site), $data[0]);
      }
 
 	   if (! file_exists($b_folder))
