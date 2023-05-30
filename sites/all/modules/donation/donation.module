@@ -1729,6 +1729,44 @@ function send_email_generic( $to, $subject, $body, $attachment = array() )
   return array('success' => True, 'msg' => $mid);
 }
 
+function send_whatsapp_generic( $contact, $template, $params_body, $file = null )
+{
+  $wa_id = whatsapp_360_get_waid($contact);
+  $ret = array('success' => False, 'msg' => 'Unable to send');
+  if ($wa_id)
+  {
+    $params_header = array();
+    if($file)
+    {
+      $file_name = basename($file, ".pdf");
+      $file_ret = upload_whatsapp_pdf_generic($file);
+      if($file_ret['success'])
+      {
+        $file_id = $file_ret['file_id'];
+        $params_header[] = $file_id;
+      }
+      else
+      {
+        $ret['msg'] = "Unable to upload attachement.";
+        return $ret;
+      }
+    }
+    else
+    {
+      $file_name = "";
+    }
+
+    $response = send_whatsapp_360($wa_id, $template, $params_header, $params_body, $file_name );
+    if ($response)
+    {
+      $ret['success'] = True;
+      $ret['msg'] = $response;
+    }
+
+  }
+  return $ret;
+}
+
 
 function get_country($name)
 {
@@ -3570,6 +3608,67 @@ function upload_whatsapp_pdf( $donation_id )
 	}
 	return 0;
 } 
+
+
+function upload_whatsapp_pdf_generic($file)
+{
+    $out = array("success" => true, "ret" => null);
+
+    if (!file_exists($file))
+    {
+        $out["success"] = false;
+        return $out;
+    }
+
+    $data = file_get_contents($file);
+    try
+    {
+        $curl = curl_init();
+
+        curl_setopt_array($curl, array(
+          CURLOPT_URL => variable_get('whatsapp_url', '').'/media',
+          CURLOPT_RETURNTRANSFER => true,
+          CURLOPT_ENCODING => '',
+          CURLOPT_MAXREDIRS => 10,
+          CURLOPT_TIMEOUT => 0,
+          CURLOPT_FOLLOWLOCATION => true,
+          CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+          CURLOPT_CUSTOMREQUEST => 'POST',
+          CURLOPT_POSTFIELDS => $data,
+          CURLOPT_HTTPHEADER => array(
+            'D360-Api-Key: '.variable_get('whatsapp_key', ''),
+            'Content-Type: application/pdf'
+          ),
+        ));
+
+        $response = curl_exec($curl);
+        curl_close($curl);
+
+        $ret = json_decode($response);
+
+        $file_id = $ret->media[0]->id;
+
+        if($file_id)
+        {
+            $out["file_id"] = $file_id;
+            return $out;
+        }
+        else
+        {
+            $out["success"] = false;
+            return $out;
+        }
+
+
+    }
+    catch (\Throwable $e)
+    {
+        watchdog("upload_whatsapp_pdf_generic", "Error uploading $filename: ".$e->getMessage());
+        $out["success"] = false;
+        return $out;
+    }
+}
+
 
 function send_email( $donation_id )
 {
