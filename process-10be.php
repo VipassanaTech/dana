@@ -33,10 +33,7 @@ if ( conf_path() == 'sites/default')
    exit(1);
 }
 
-if ( date('m') > 3 )
-  $fin = date('Y')."-".(date('Y')+1);
-else
-  $fin = (date('Y')-1)."-".date('Y');
+$fin = (date('Y')-1)."-".date('Y');
 
 echo "financial year: $fin\n";
 
