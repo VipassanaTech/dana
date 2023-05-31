@@ -51,7 +51,7 @@ if (($handle = fopen($csv_file, "r")) !== FALSE)
 	$q = "select d_email, d_contact from dh_donor where d_id_no='".$id_no."' order by d_id desc limit 1";
 	//echo "$q\n";
 	$row = db_query($q)->fetchAssoc();
-        if ($row)
+        if ($row && $id_no)
 	{
 	   //echo "$id_no => ".$row['d_email']." -> ".$row['d_contact']."\n";
 	   $fields = array(  basename($data[0]), $id_no, $row['d_email'], $row['d_contact']);
