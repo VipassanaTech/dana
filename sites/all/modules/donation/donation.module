@@ -1183,7 +1183,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
         	    },
         		Cancel: function() {
           			$( this ).dialog( "close" );
-          			
+                $("input[type=submit]").prop("disabled", false);
         		}
       		  }
     		});
@@ -1382,6 +1382,11 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				}
 
 			});
+
+      // prevent multiple submit
+      $("form").submit(function(){
+          $("input[type=submit]", this).prop("disabled", true);
+      });
 
 
 		});
