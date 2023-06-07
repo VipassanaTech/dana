@@ -1828,7 +1828,7 @@ function donation_report_form($form, &$form_state)
 	    $created_by[$row->uid] = $row->name; 
 
 
-	$txns = explode("\n", variable_get('txn_types', ""));
+	$txns = explode("\n", trim(variable_get('txn_types', "")));
     $txn_types = array();
     $txn_types_totals = array();
     $txn_types_qry = '';
