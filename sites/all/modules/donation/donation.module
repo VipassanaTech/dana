@@ -1770,20 +1770,25 @@ function send_whatsapp_generic( $contact, $template, $params_body, $file = null 
       }
 
       $response = send_whatsapp_360($wa_id, $template, $params_header, $params_body, $file_name );
-      watchdog('DanaSendWhatsappGeneric', "Whatsapp sent to ".$contact." (".$response.")");
       if ($response)
       {
         $ret['success'] = True;
         $ret['msg'] = $response;
+        watchdog('DanaSendWhatsappGeneric', "Whatsapp sent to ".$contact." (".$ret['msg'].")");
+      }
+      else
+      {
+        $ret['msg'] = "Unable to send Whatsapp.";
+        watchdog('DanaSendWhatsappGenericError', "Error sending whatsapp to ".$contact." (".$ret['msg'].")");
       }
 
     }
   }
   catch(Throwable $e)
   {
-    watchdog('DanaSendWhatsappGenericError', "Error sending whatsapp to ".$contact." (".$e->getMessage().")");
     $ret['success'] = false;
     $ret['msg'] = $e->getMessage();
+    watchdog('DanaSendWhatsappGenericError', "Error sending whatsapp to ".$contact." (".$ret['msg'].")");
   }
 
   return $ret;
