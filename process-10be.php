@@ -48,7 +48,7 @@ if (($handle = fopen($csv_file, "r")) !== FALSE)
     while (($data = fgetcsv($handle, 1000, ",")) !== FALSE)
     {
     	$id_no = trim(str_replace( array(" ", ",", "-"), '', $data[1]));
-    	$q = "select d_email, d_contact from dh_donor where d_id_no='".$id_no."' order by d_id desc limit 1";
+    	$q = "select d_email, d_contact from dh_donor where REPLACE(REPLACE(REPLACE(d_id_no, ' ', ''), '\\t', ''), '\\n', '')='".$id_no."' order by d_id desc limit 1";
     	//echo "$q\n";
     	$row = db_query($q)->fetchAssoc();
       $email_sent = false;
