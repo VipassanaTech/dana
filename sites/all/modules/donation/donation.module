@@ -439,6 +439,17 @@ function donation_admin_form($form, &$form_state)
          '#description' => t('Date of Issuance of Unique Registration Number'),
    );
 
+    $val = variable_get('trust_pan', '');
+    $form['trust_pan'] = array(
+         '#type' => 'textfield',
+         '#size' => 100,
+         '#required' => false,
+         '#default_value' => $val,
+         '#attributes' => array('maxlength' => 10),
+         '#title' => t('Permanent Account Number (PAN)'),
+         '#description' => t('Permanent Account Number (PAN)'),
+   );
+
 
     
 	//Ability to send email, pushed to next phase    
