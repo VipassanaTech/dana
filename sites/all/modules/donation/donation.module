@@ -1382,8 +1382,12 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			 });
 
 			$( "#donation-main-form" ).submit(function( event ) {
+        $("input[type=submit]").prop("disabled", true);
 				if (! form_ok())
-			  		event.preventDefault();
+        {
+          event.preventDefault();
+          $("input[type=submit]").prop("disabled", false);
+        }
 				else
 				{
 					event.preventDefault();
@@ -1393,11 +1397,6 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				}
 
 			});
-
-      // prevent multiple submit
-      $("form").submit(function(){
-          $("input[type=submit]", this).prop("disabled", true);
-      });
 
 
 		});
