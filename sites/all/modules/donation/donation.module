@@ -848,7 +848,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 	$form['d_contact'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'Contact No', 
 		'#required' => true,  '#weight' => 4.1, '#default_value' => get_default('d_contact', $edit_data ,'') );
-	$form['d_pincode'] = array('#type' => 'textfield', '#size' => 15, '#title' => 'Post/Pin/Zip Code','#weight' => 4.2, '#default_value' => get_default('d_pincode',$edit_data, '') );
+	$form['d_pincode'] = array('#type' => 'textfield', '#size' => 15, '#title' => 'Post/Pin/Zip Code', '#required' => true, '#weight' => 4.2, '#default_value' => get_default('d_pincode',$edit_data, '') );
 	$form['d_email'] = array('#type' => 'textfield', '#size' => 45, '#title' => 'Email','#weight' => 4.3, '#default_value' => get_default('d_email', $edit_data, '') );
 
 	$form['d_country'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'Country', '#required' => true, '#weight' => 5.1, '#default_value' => get_default('c_name', $edit_data, '') );
