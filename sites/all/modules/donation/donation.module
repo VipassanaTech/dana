@@ -1535,6 +1535,7 @@ function generate_receipt( $id, $amended )
 		$receipt_num = $row['d_receipt_num'];
 	$receipt_data['receipt-no'] = variable_get('receipt_prefix').str_pad($receipt_num, 7, "0", STR_PAD_LEFT);;
 	$receipt_data['receipt-date'] = date("d/m/Y", strtotime($row['d_date']))  ;
+  $receipt_data['created-date'] = date("d/m/Y", strtotime($row['d_created']))  ;
 	$name = $mr_ms.$row['d_name'];
 	if (strlen($name) > 40)
 		$name = '<div class="name-small">'.$name.'</div>';
