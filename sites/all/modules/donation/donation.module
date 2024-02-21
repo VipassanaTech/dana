@@ -1753,7 +1753,7 @@ function send_email_generic( $to, $subject, $body, $attachment = array() )
 
 }
 
-function send_whatsapp_generic( $contact, $template, $params_body, $file = null )
+function send_whatsapp_generic( $contact, $template, $params_body, $file = null, $file_id = null, $file_name2 = null )
 {
   $ret = array('success' => False, 'msg' => 'Unable to send');
   try
@@ -1779,12 +1779,18 @@ function send_whatsapp_generic( $contact, $template, $params_body, $file = null 
           return $ret;
         }
       }
+      if ( $file_id )
+      {
+	 $params_header[] = $file_id;
+	 $file_name = $file_name2;
+      }
 
       $response = send_whatsapp_360($wa_id, $template, $params_header, $params_body, $file_name );
       if ($response)
       {
         $ret['success'] = True;
         $ret['msg'] = $response;
+        $ret['file_id'] = $file_id;
         watchdog('DanaSendWhatsappGeneric', "Whatsapp sent to ".$contact." (".$ret['msg'].")");
       }
       else
@@ -3779,6 +3785,7 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $recei
     ]);
 
     $response = curl_exec($curl);
+    //var_dump($response);
     $err = curl_error($curl);
 
     curl_close($curl);
