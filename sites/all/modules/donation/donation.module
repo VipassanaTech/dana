@@ -1711,7 +1711,7 @@ function send_donor_email( $id )
 		foreach( $attachment as $a )
 			$options['attachment'][] = array('filePath' => $a, 'filename' => $row['d_receipt_f'].'.pdf');
 	}
-	$res = $mg->messages()->send(variable_get('mailgun_primary_domain', ''), $options );
+	$res = $mg->messages()->send(get_mailgun_domain($from), $options );
 	$mid = $res->getId();
 	watchdog('DanaSendEmail', "Email sent to ".$row['d_email']." (".$mid.")");
 	return array('success' => True, 'msg' => $mid);
@@ -1740,7 +1740,7 @@ function send_email_generic( $to, $subject, $body, $attachment = array() )
       foreach( $attachment as $a )
         $options['attachment'][] = array('filePath' => $a, 'filename' => basename($a));
     }
-    $res = $mg->messages()->send(variable_get('mailgun_primary_domain', ''), $options );
+    $res = $mg->messages()->send(get_mailgun_domain($from), $options );
     $mid = $res->getId();
     watchdog('DanaSendEmailGeneric', "Email sent to ".$to." (".$mid.")");
     return array('success' => True, 'msg' => $mid);
@@ -4004,4 +4004,23 @@ function update_don_tags()
 
   drupal_json_output($out);
   exit;
+}
+
+function get_mailgun_domain($from)
+{
+    $mailgun_dhamma_domain = "";
+    $mailgun_vridhamma_domain = "";
+    $mailgun_domains = array_map('trim', explode(',', variable_get('mailgun_primary_domain', '')));
+
+    $mailgun_domain = $mailgun_domains[0];
+    $from_top_domain = implode('.', array_slice(explode('.', imap_rfc822_parse_adrlist($from, "")[0]->host), -2, 2));
+
+    foreach($mailgun_domains as $d)
+    {
+        $mailgun_top_domain = implode('.', array_slice(explode('.', $d), -2, 2));
+        if(strtolower($from_top_domain) == strtolower($mailgun_top_domain))
+          $mailgun_domain = $d;
+    }
+
+    return $mailgun_domain;
 }
