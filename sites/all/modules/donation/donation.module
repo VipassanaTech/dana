@@ -3794,6 +3794,7 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $recei
     if ($err) {
         watchdog('Donation', 'Unable to send Whatsapp: '.$to.' template: '.$template.': '.$err.': '.$response, array(), WATCHDOG_ERROR);
     } else {
+	    watchdog('Whatsapp Response', $response);
         $ret = json_decode($response)->messages[0]->id;
     }
     return $ret;
