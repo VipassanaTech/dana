@@ -855,7 +855,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	$form['d_state'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'State', '#required' => true, '#weight' => 5.2, '#default_value' => get_default('s_name', $edit_data, '') );
 	$form['d_city'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'City','#weight' => 5.3, '#default_value' => get_default('c_city', $edit_data,'') );
 
-	$form['d_address'] = array('#type' => 'textarea', '#size' => 105, '#rows' => 3, '#title' => 'Address','#weight' => 6.1, '#default_value' => get_default('d_address', $edit_data,''), '#maxlength' => 200 );
+	$form['d_address'] = array('#type' => 'textarea', '#size' => 105, '#rows' => 1, '#title' => 'Address','#weight' => 6.1, '#default_value' => get_default('d_address', $edit_data,''), '#maxlength' => 200 );
 
 	$form['d_type'] = array('#type' => 'radios', '#title' => 'Type of Transaction', '#required' => true, 
 		'#options' => $txn_types, /*array('cash' => 'Cash', 'cheque' => 'Cheque', 'neft' => 'NEFT', 'rtgs' => 'RTGS',  'card' => 'Credit/Debit Card'), */
