@@ -45,6 +45,7 @@ function donation_permission()
 	$perms['assign donation tags'] = array("title" => 'Assign Donation Tags');
 	$perms['unassign donation tags'] = array("title" => 'Unassign Donation Tags');
 	$perms['access donor'] = array('title' => t('Access Donor Details') );
+    $perms['download receipt'] = array("title" => 'Download Receipt');
 
 	return $perms;
 }
@@ -140,7 +141,7 @@ function donation_menu()
 	$items['download-receipt/%adonation_id'] = array( 'title' => t('Download Receipt'),
 	     'page arguments' => array(1),
 	     'page callback' => 'download_receipt',
-	     'access arguments' => array('access donation'));
+	     'access arguments' => array('download receipt'));
 
 
 	$items['send-email/%adonation_id'] = array( 'title' => t('Send Email'),
