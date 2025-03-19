@@ -830,7 +830,9 @@ function donation_main_form($form, &$form_state, $edit_data = array())
                 '#default_value' => get_default('d_category',$edit_data, ''), '#weight' => 1.2, '#attributes' => array('class' => array('col-sm-6')) );
 
 	$form['d_gender'] = array('#type' => 'radios', '#title' => 'Gender', '#required' => true, 
-		'#options' => array('male' => 'Male', 'female' => 'Female', 'trans' => 'TransGender', 'ms' => 'Organization' ),
+		'#options' => array('male' => 'Male', 'female' => 'Female',
+            // 'trans' => 'TransGender',
+            'ms' => 'Organization' ),
 		'#default_value' => get_default('d_gender', $edit_data, 'male'), '#weight' => 1.3, '#attributes' => array('class' => array('col-sm-4')) );
 
 	$form['d_name'] = array('#type' => 'textfield', '#size' => 50, '#title' => 'Donor Name', 
