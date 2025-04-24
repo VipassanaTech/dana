@@ -2996,6 +2996,7 @@ function donation_report_xls()
 
 	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'Full Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
 		d.d_receipt_f as 'Receipt No', 
+        dit.it_name as 'ID Type',
 		don.d_id_no as 'Passport/ID',  
 		$txn_types_qry
 		/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
@@ -3008,6 +3009,7 @@ function donation_report_xls()
 		left join dh_city ci on don.d_city=ci.c_id left join dh_state st on (don.d_state=st.s_code AND don.d_country=st.s_country) left join dh_country cy on don.d_country=cy.c_code
 		left join dh_course c on d.d_course=c.c_id 
     left join dh_donation_tag dt on d.d_id=dt.dt_donation
+    left join dh_id_types dit on dit.it_code=don.dh_id_types
 		where  d.d_deleted=0 ".$append ;
 
 
@@ -3194,8 +3196,8 @@ function donation_report_xls()
 	$xls->getActiveSheet()->getColumnDimension('J')->setWidth(12);
 	$xls->getActiveSheet()->getColumnDimension('K')->setWidth(15);
 	$xls->getActiveSheet()->getColumnDimension('L')->setWidth(12);
-	$xls->getActiveSheet()->getColumnDimension('M')->setWidth(15);	
-	$xls->getActiveSheet()->getColumnDimension('N')->setWidth(15);	
+	$xls->getActiveSheet()->getColumnDimension('M')->setWidth(15);
+	$xls->getActiveSheet()->getColumnDimension('N')->setWidth(15);
 	$end = chr(ord('O')+count($txn_types_totals)-1);
 	$xls->getActiveSheet()->getColumnDimension('O:'.$end)->setWidth(7);
 	if ( (ord($end)+1) <= 90 )
