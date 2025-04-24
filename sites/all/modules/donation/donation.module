@@ -3009,7 +3009,7 @@ function donation_report_xls()
 		left join dh_city ci on don.d_city=ci.c_id left join dh_state st on (don.d_state=st.s_code AND don.d_country=st.s_country) left join dh_country cy on don.d_country=cy.c_code
 		left join dh_course c on d.d_course=c.c_id 
     left join dh_donation_tag dt on d.d_id=dt.dt_donation
-    left join dh_id_types dit on dit.it_code=don.dh_id_types
+    left join dh_id_types dit on dit.it_code=don.d_id_types
 		where  d.d_deleted=0 ".$append ;
 
 
