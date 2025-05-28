@@ -3570,7 +3570,7 @@ function generate_10bd( $year )
 		else
 			$row['d_category'] = 'Specific grant';
 		$row['Name of donor'] = sanitize_10bd($row['Name of donor']);
-		$row['Address of donor'] = sanitize_10bd($row['Address of donor']);
+		$row['Address of donor'] = trim(sanitize_10bd($row['Address of donor']));
 		$row['ID Code'] = $id_codes[$row['ID Code']];
 		fputcsv($fp, $row);
 	}
