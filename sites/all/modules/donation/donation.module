@@ -420,6 +420,16 @@ function donation_admin_form($form, &$form_state)
    );
 
 
+    $val = variable_get('center_display_name', '');
+    $form['center_display_name'] = array(
+         '#type' => 'textfield',
+         '#size' => 200,
+         '#required' => false,
+         '#default_value' => $val,
+         '#title' => t('Center Display Name'),
+         '#description' => t('Center Display Name'),
+   );
+
     $val = variable_get('10bd_registration_no', '');
     $form['10bd_registration_no'] = array(
          '#type' => 'textfield',
