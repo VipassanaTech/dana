@@ -39,6 +39,15 @@ echo "financial year: $fin\n";
 
 $site = variable_get("site_name", "");
 echo $site."\n";
+
+$site_email = variable_get("donation_email", "");
+$site_display = variable_get("center_display_name", "");
+
+if(!$site_display)
+	$site_display = $site;
+
+$subject = "Form 10BE Certificate for Your Donation to $site_display";
+
 if (($handle = fopen($csv_file, "r")) !== FALSE)
 {
     $dir = dirname($csv_file);
@@ -63,8 +72,18 @@ if (($handle = fopen($csv_file, "r")) !== FALSE)
 
     	   if ($row['d_email'])
     	   {
+		   $body1 = "Dear {$tmp[1]},\n
+We hope this message finds you well.\n
+Thank you for your generous donation to $site_display during the financial year $fin. We deeply appreciate your support.\n
+As per the Income Tax Department guidelines, all charitable organizations are required to report donations received and issue Form 10BE certificates to donors. Please find attached your Form 10BE certificate for your records. This certificate can be used to claim income tax benefits under applicable provisions.\n
+If you made multiple donations, you may receive more than one email or WhatsApp message.\n
+Should you have any questions or need assistance, please feel free to reach out to us at <strong>$site_email</strong>.\n
+With warm regards,\n\n
+<strong>Accounts Team</strong>
+<strong>$site_display</strong>";
       		$body = "Dear ".$tmp[1]."\n\nPlease find attached Form 10 BE for financial year ".$fin."\n\nRegards,\n-Accounts Team\n($site)\n";
-      		$ret_email = send_email_generic($row['d_email'], $site." - Form 10 BE", nl2br($body), array($data[0]));
+      		//$ret_email = send_email_generic($row['d_email'], $site." - Form 10 BE", nl2br($body), array($data[0]));
+      		$ret_email = send_email_generic($row['d_email'], $subject, nl2br($body1), array($data[0]));
           $email_sent = $ret_email['success'];
     	   }
          if ($row['d_contact'])
