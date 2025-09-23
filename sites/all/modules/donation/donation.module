@@ -3784,9 +3784,9 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $recei
     }
 
     if ($type == 'template')
-        $payload = json_encode(array('to' => $to, "type" => 'template', 'template' => array('namespace' => $namespace, "language" => array("policy" => "deterministic", "code" => "en"), "name" => $template, "components" => array(array("type" => "body", "parameters" => $p_arr), array("type" => "header", "parameters" => $p_header_arr) ))));
+        $payload = json_encode(array("messaging_product"=> "whatsapp", "recipient_type" => "individual", 'to' => $to, "type" => 'template', 'template' => array('namespace' => $namespace, "language" => array("policy" => "deterministic", "code" => "en"), "name" => $template, "components" => array(array("type" => "body", "parameters" => $p_arr), array("type" => "header", "parameters" => $p_header_arr) ))));
     else
-        $payload = json_encode(array('to' => $to, "type" => 'text', 'text' => array("body" => $params) ));
+        $payload = json_encode(array("messaging_product"=> "whatsapp", "recipient_type" => "individual", 'to' => $to, "type" => 'text', 'text' => array("body" => $params) ));
 
     $headers = [
         "Content-Type: application/json",
@@ -3822,6 +3822,7 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $recei
 
 function whatsapp_360_get_waid( $to )
 {
+    return substr($to);
     $namespace = variable_get('whatsapp_namespace', '');
     $wa_url = variable_get('whatsapp_url', '');
     $wa_api_key = variable_get('whatsapp_key', '');
