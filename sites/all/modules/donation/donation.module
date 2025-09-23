@@ -3822,7 +3822,7 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $recei
 
 function whatsapp_360_get_waid( $to )
 {
-    return substr($to);
+    return $to;
     $namespace = variable_get('whatsapp_namespace', '');
     $wa_url = variable_get('whatsapp_url', '');
     $wa_api_key = variable_get('whatsapp_key', '');
