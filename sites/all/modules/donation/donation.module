@@ -2243,6 +2243,26 @@ function donation_report_form($form, &$form_state)
 		$result = db_query($q);
 		//drupal_set_message($q);
 
+        $q_typewise = "select
+            d_id_type as 'ID-Type-Code',
+            it_name as 'ID-Type-Name',
+            d_foreign as 'Foreign',
+            SUM(d.d_amount) as 'Amount-Sum'
+            from dh_donation d
+            left join dh_donor don on d.d_donor=don.d_id
+            left join dh_id_types it on it.it_code=don.d_id_type
+            where
+            d.d_deleted=0 $append";
+
+        if (($from <> '') )
+            $q_typewise .= " and d.d_date >= '$from' ";
+        if (($to <> '') )
+            $q_typewise .= " and d.d_date <= '$to' ";
+
+        $q_typewise .= " group by d_id_type, d_foreign";
+
+        $result_typewise = db_query($q_typewise);
+
 		if ($result->rowCount() <= 0)
 			$form['out'] = array('#markup' => '<div class="report-status"><h2>'.t('No transactions found').'!</h2></div>', '#weight' => 100);
 		else
@@ -2418,7 +2438,25 @@ function donation_report_form($form, &$form_state)
 			//drupal_set_message($out);
 			$form['out'] = array('#markup' => $out, '#weight' => 100 );
 			
-		}		
+		}
+
+        $out_typewise = '<br><h2>Total amount grouped by ID type for given date range (without any other search parameters).</h2><br>';
+        if ($result_typewise->rowCount() <= 0)
+        {
+            $out_typewise .= 'No result found.';
+        }
+        else
+        {
+            while ( $row_typewise = $result_typewise->fetchAssoc())
+                $rows_typewise[] = $row_typewise;
+
+            $headers_typewise = array('ID-Type-Code', 'ID-Type-Name', 'Foreign', 'Amount-Sum');
+            $table_typewise = theme('table',array('header' => $headers_typewise, 'rows' => $rows_typewise));
+            $out_typewise .= $table_typewise;
+        }
+
+        $form['out-typewise'] = array('#markup' => $out_typewise, '#weight' => 102 );
+
 	}
 
 
