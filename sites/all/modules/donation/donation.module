@@ -1782,8 +1782,7 @@ function send_whatsapp_generic( $contact, $template, $params_body, $file = null,
         $file_ret = upload_whatsapp_pdf_generic($file);
         if($file_ret['success'])
         {
-          $file_id = $file_ret['file_id'];
-          $params_header[] = $file_id;
+          $params_header[] = $file_ret['file_id'];
         }
         else
         {
