@@ -3566,9 +3566,70 @@ function donation_income_tax_form($form, &$form_state)
 			$years[$year + 1] = $year.' - '.($year + 1);
 		} 
 	}
+
 	$form['financial_year'] =  array('#type' => 'select', '#title' => 'Select Financial Year', '#options' => $years, '#required' => 1);
-	$form['sub'] = array('#type' => 'submit', '#value' => 'Download 10 BD', '#suffix' => '<br/>Registration No and Date of Issuance can be setup in Settings.<br/>Donations marked as Foreign are not included.');
+
+    $form['quarter'] = array(
+        '#type' => 'select',
+        '#title' => t('Quarter'),
+        '#options' => array(
+        ''   => t('Choose'),
+        'Q1' => 'Q1 (Apr - Jun)',
+        'Q2' => 'Q2 (Jul - Sep)',
+        'Q3' => 'Q3 (Oct - Dec)',
+        'Q4' => 'Q4 (Jan - Mar)',
+        ),
+        );
+
+    $form['month'] = array(
+        '#type' => 'select',
+        '#title' => t('Month'),
+        '#options' => array(
+        ''   => t('Choose'),
+        '04' => 'April',
+        '05' => 'May',
+        '06' => 'June',
+        '07' => 'July',
+        '08' => 'August',
+        '09' => 'September',
+        '10' => 'October',
+        '11' => 'November',
+        '12' => 'December',
+        '01' => 'January',
+        '02' => 'February',
+        '03' => 'March',
+        ),
+        );
+
+	$form['sub'] = array('#type' => 'submit', '#value' => 'Download Annual 10BD', '#prefix' => '<br/>Registration No and Date of Issuance can be setup in Settings.<br/>Donations marked as Foreign are not included.<br/>');
+
+    $form['download_quarter'] = array(
+        '#type' => 'submit',
+        '#value' => t('Download Quarterly 10BD'),
+        '#validate' => array('donation_income_tax_quarter_validate'),
+        '#submit' => array('donation_income_tax_download_quarter_submit'),
+        );
+
+    $form['download_month'] = array(
+        '#type' => 'submit',
+        '#value' => t('Download Monthly 10BD'),
+        '#validate' => array('donation_income_tax_month_validate'),
+        '#submit' => array('donation_income_tax_download_month_submit'),
+        );
+
 	return $form;
+}
+
+function donation_income_tax_month_validate($form, &$form_state) {
+  if (empty($form_state['values']['month'])) {
+    form_set_error('month', t('Please select a month.'));
+  }
+}
+
+function donation_income_tax_quarter_validate($form, &$form_state) {
+  if (empty($form_state['values']['quarter'])) {
+    form_set_error('quarter', t('Please select a quarter.'));
+  }
 }
 
 function donation_income_tax_form_submit($form, &$form_state)
@@ -3577,16 +3638,64 @@ function donation_income_tax_form_submit($form, &$form_state)
 	generate_10bd( $form_state['input']['financial_year'] );
 }
 
+function donation_income_tax_download_quarter_submit($form, &$form_state)
+{
+    generate_10bd( $form_state['input']['financial_year'], $form_state['values']['quarter'] );
+}
+
+function donation_income_tax_download_month_submit($form, &$form_state)
+{
+    generate_10bd( $form_state['input']['financial_year'], '', $form_state['values']['month'] );
+}
+
 function sanitize_10bd( $data )
 {
 	$ret = trim(preg_replace('/[^A-Za-z0-9\-,\. ]/', '', $data));
 	return trim($ret, ",.-");
 }
 
-function generate_10bd( $year )
+function generate_10bd( $year, $quarter = '', $month = '' )
 {
-	$start_date = ($year - 1)."-04-01";
-	$end_date = $year."-03-31";
+    if (!empty($month)) {
+        // Monthly
+        $fy_start = $year - 1;
+
+        // Jan-Mar belong to the ending calendar year of the FY.
+        $calendar_year = ($month >= 4) ? $fy_start : $year;
+
+        $start_date = sprintf('%04d-%02d-01', $calendar_year, $month);
+        $end_date = date('Y-m-t', strtotime($start_date));
+    }
+    elseif (!empty($quarter)) {
+        // Quarterly
+        switch ($quarter) {
+            case 'Q1':
+                $start_date = ($year - 1) . '-04-01';
+                $end_date   = ($year - 1) . '-06-30';
+                break;
+
+            case 'Q2':
+                $start_date = ($year - 1) . '-07-01';
+                $end_date   = ($year - 1) . '-09-30';
+                break;
+
+            case 'Q3':
+                $start_date = ($year - 1) . '-10-01';
+                $end_date   = ($year - 1) . '-12-31';
+                break;
+
+            case 'Q4':
+                $start_date = $year . '-01-01';
+                $end_date   = $year . '-03-31';
+                break;
+        }
+    }
+    else {
+        // Annual
+        $start_date = ($year - 1) . '-04-01';
+        $end_date   = $year . '-03-31';
+    }
+
      $urn = variable_get('10bd_registration_no', '');
      $urn_date = variable_get('10bd_registration_date', '');
 
