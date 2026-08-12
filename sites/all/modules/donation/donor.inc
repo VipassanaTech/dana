@@ -82,7 +82,38 @@ function donor_search_form($form, &$form_state)
 	$form['go'] = array('#type' => 'submit', '#value' => t('Search'));
 	$form['clear'] = array('#type' => 'markup', '#markup' => ' ' . l(t('Clear'), 'donors'));
 
-	$query = db_select('dh_donor', 'd')->extend('PagerDefault');
+	// Apply the search filters to a dh_donor query (alias 'd'); used for both
+	// the count and the page query so they stay identical.
+	$apply = function ($q) use ($name, $email, $contact, $idno, $id_type, $has_don, $no_don, $has_log, $no_log) {
+		$q->condition('d.d_deleted', 0);
+		if ($name != '')    $q->condition('d.d_name', '%' . db_like($name) . '%', 'LIKE');
+		if ($email != '')   $q->condition('d.d_email', '%' . db_like($email) . '%', 'LIKE');
+		if ($contact != '') $q->condition('d.d_contact', '%' . db_like($contact) . '%', 'LIKE');
+		if ($idno != '')    $q->condition('d.d_id_no', '%' . db_like($idno) . '%', 'LIKE');
+		if ($id_type !== '' && is_numeric($id_type))
+			$q->condition('d.d_id_type', $id_type);
+		if ($has_don && !$no_don)
+			$q->where('EXISTS (SELECT 1 FROM dh_donation dd WHERE dd.d_donor = d.d_id)');
+		elseif ($no_don && !$has_don)
+			$q->where('NOT EXISTS (SELECT 1 FROM dh_donation dd WHERE dd.d_donor = d.d_id)');
+		if ($has_log && !$no_log)
+			$q->where("EXISTS (SELECT 1 FROM dh_log l WHERE l.l_module = 'dh_donor' AND l.l_identifier = d.d_id)");
+		elseif ($no_log && !$has_log)
+			$q->where("NOT EXISTS (SELECT 1 FROM dh_log l WHERE l.l_module = 'dh_donor' AND l.l_identifier = d.d_id)");
+	};
+
+	$limit = 50;
+
+	// Cheap total for the pager: COUNT over dh_donor with filters only
+	// (no display joins, no per-row donation subquery).
+	$count_q = db_select('dh_donor', 'd');
+	$apply($count_q);
+	$count_q->addExpression('COUNT(*)');
+	$total = (int) $count_q->execute()->fetchField();
+	$page = pager_default_initialize($total, $limit);
+
+	// Fetch only this page of donors (joins are for display only).
+	$query = db_select('dh_donor', 'd');
 	$query->leftJoin('dh_country', 'co', 'd.d_country = co.c_code');
 	$query->leftJoin('dh_state', 's', 'd.d_state = s.s_code AND d.d_country = s.s_country');
 	$query->leftJoin('dh_city', 'ci', 'd.d_city = ci.c_id');
@@ -92,35 +123,21 @@ function donor_search_form($form, &$form_state)
 	$query->addField('co', 'c_name', 'country');
 	$query->addField('s', 's_name', 'state');
 	$query->addField('ci', 'c_city', 'city');
-	$query->addExpression('(SELECT COUNT(*) FROM dh_donation dd WHERE dd.d_donor = d.d_id)', 'total_donations');
-	$query->condition('d.d_deleted', 0);
-
-	if ($name != '')
-		$query->condition('d.d_name', '%' . db_like($name) . '%', 'LIKE');
-	if ($email != '')
-		$query->condition('d.d_email', '%' . db_like($email) . '%', 'LIKE');
-	if ($contact != '')
-		$query->condition('d.d_contact', '%' . db_like($contact) . '%', 'LIKE');
-	if ($idno != '')
-		$query->condition('d.d_id_no', '%' . db_like($idno) . '%', 'LIKE');
-	if ($id_type !== '' && is_numeric($id_type))
-		$query->condition('d.d_id_type', $id_type);
-
-	// Donations filter (checking both, or neither, = no filter).
-	if ($has_don && !$no_don)
-		$query->where('EXISTS (SELECT 1 FROM dh_donation dd WHERE dd.d_donor = d.d_id)');
-	elseif ($no_don && !$has_don)
-		$query->where('NOT EXISTS (SELECT 1 FROM dh_donation dd WHERE dd.d_donor = d.d_id)');
-
-	// Change-log filter.
-	if ($has_log && !$no_log)
-		$query->where("EXISTS (SELECT 1 FROM dh_log l WHERE l.l_module = 'dh_donor' AND l.l_identifier = d.d_id)");
-	elseif ($no_log && !$has_log)
-		$query->where("NOT EXISTS (SELECT 1 FROM dh_log l WHERE l.l_module = 'dh_donor' AND l.l_identifier = d.d_id)");
-
+	$apply($query);
 	$query->orderBy('d.d_name');
-	$query->limit(50);
-	$result = $query->execute();
+	$query->range($page * $limit, $limit);
+	$donors = $query->execute()->fetchAll();
+
+	// Donation counts for just the donors on this page (one grouped query).
+	$counts = array();
+	$ids = array();
+	foreach ($donors as $dr)
+		$ids[] = $dr->d_id;
+	if ($ids) {
+		$cres = db_query("SELECT d_donor, COUNT(*) AS c FROM dh_donation WHERE d_donor IN (:ids) GROUP BY d_donor", array(':ids' => $ids));
+		foreach ($cres as $cr)
+			$counts[$cr->d_donor] = (int) $cr->c;
+	}
 
 	$can_edit = user_access('edit donors');
 	$can_delete = user_access('delete donors');
@@ -131,7 +148,9 @@ function donor_search_form($form, &$form_state)
 	);
 
 	$rows = array();
-	foreach ($result as $r) {
+	foreach ($donors as $r) {
+		$total_donations = isset($counts[$r->d_id]) ? $counts[$r->d_id] : 0;
+
 		$location = trim(implode(', ', array_filter(array($r->city, $r->state, $r->country))));
 		if ($r->d_pincode)
 			$location .= ' - ' . $r->d_pincode;
@@ -141,17 +160,16 @@ function donor_search_form($form, &$form_state)
 		if ($can_edit)
 			$actions[] = l(t('Edit'), 'donors/edit/' . $r->d_id);
 		if ($can_delete) {
-			if ($r->total_donations > 0)
+			if ($total_donations > 0)
 				$actions[] = '<span class="donor-delete-blocked" title="' . t('Has mapped donations') . '">' . t('Delete') . '</span>';
 			else
 				$actions[] = l(t('Delete'), 'donors/delete/' . $r->d_id, array('attributes' => array('class' => array('donor-delete'), 'onclick' => 'return confirm("Delete this donor?");')));
 		}
 
-		// Donation count links to the donor (mapped-donations table) only for
-		// users who can edit donors; others see a plain number.
-		$donations_cell = (int) $r->total_donations;
-		if ($r->total_donations > 0 && $can_edit)
-			$donations_cell = l($r->total_donations, 'donors/donations/' . $r->d_id,
+		// Donation count links to the donations page only for edit users.
+		$donations_cell = $total_donations;
+		if ($total_donations > 0 && $can_edit)
+			$donations_cell = l($total_donations, 'donors/donations/' . $r->d_id,
 				array('attributes' => array('title' => t('View mapped donations'))));
 
 		$rows[] = array(
