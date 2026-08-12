@@ -112,29 +112,36 @@ function donor_search_form($form, &$form_state)
 	$total = (int) $count_q->execute()->fetchField();
 	$page = pager_default_initialize($total, $limit);
 
-	// Fetch only this page of donors (joins are for display only).
-	$query = db_select('dh_donor', 'd');
-	$query->leftJoin('dh_country', 'co', 'd.d_country = co.c_code');
-	$query->leftJoin('dh_state', 's', 'd.d_state = s.s_code AND d.d_country = s.s_country');
-	$query->leftJoin('dh_city', 'ci', 'd.d_city = ci.c_id');
-	$query->leftJoin('dh_id_types', 'it', 'd.d_id_type = it.it_code');
-	$query->fields('d', array('d_id', 'd_name', 'd_gender', 'd_contact', 'd_email', 'd_id_no', 'd_pincode'));
-	$query->addField('it', 'it_name', 'it_name');
-	$query->addField('co', 'c_name', 'country');
-	$query->addField('s', 's_name', 'state');
-	$query->addField('ci', 'c_city', 'city');
-	$apply($query);
-	$query->orderBy('d.d_name');
-	$query->range($page * $limit, $limit);
-	$donors = $query->execute()->fetchAll();
+	// Deferred join: first get just the donor IDs for this page from dh_donor
+	// alone (joins would defeat the idx_deleted_name index-ordered LIMIT and
+	// force a filesort over the whole result set on large centres).
+	$id_query = db_select('dh_donor', 'd');
+	$id_query->addField('d', 'd_id');
+	$apply($id_query);
+	$id_query->orderBy('d.d_name');
+	$id_query->range($page * $limit, $limit);
+	$page_ids = $id_query->execute()->fetchCol();
 
-	// Donation counts for just the donors on this page (one grouped query).
+	$donors = array();
 	$counts = array();
-	$ids = array();
-	foreach ($donors as $dr)
-		$ids[] = $dr->d_id;
-	if ($ids) {
-		$cres = db_query("SELECT d_donor, COUNT(*) AS c FROM dh_donation WHERE d_donor IN (:ids) GROUP BY d_donor", array(':ids' => $ids));
+	if ($page_ids) {
+		// Fetch display data (with the lookup joins) for just those <=50 donors.
+		$query = db_select('dh_donor', 'd');
+		$query->leftJoin('dh_country', 'co', 'd.d_country = co.c_code');
+		$query->leftJoin('dh_state', 's', 'd.d_state = s.s_code AND d.d_country = s.s_country');
+		$query->leftJoin('dh_city', 'ci', 'd.d_city = ci.c_id');
+		$query->leftJoin('dh_id_types', 'it', 'd.d_id_type = it.it_code');
+		$query->fields('d', array('d_id', 'd_name', 'd_gender', 'd_contact', 'd_email', 'd_id_no', 'd_pincode'));
+		$query->addField('it', 'it_name', 'it_name');
+		$query->addField('co', 'c_name', 'country');
+		$query->addField('s', 's_name', 'state');
+		$query->addField('ci', 'c_city', 'city');
+		$query->condition('d.d_id', $page_ids, 'IN');
+		$query->orderBy('d.d_name');
+		$donors = $query->execute()->fetchAll();
+
+		// Donation counts for the same donors (one grouped query).
+		$cres = db_query("SELECT d_donor, COUNT(*) AS c FROM dh_donation WHERE d_donor IN (:ids) GROUP BY d_donor", array(':ids' => $page_ids));
 		foreach ($cres as $cr)
 			$counts[$cr->d_donor] = (int) $cr->c;
 	}
