@@ -651,7 +651,7 @@ function _get_donor_detail()
   	   $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
 	$q = 'select d.*, co.c_name as \'country\', s.s_name, ci.c_city as \'city\' from dh_donor d left join dh_country co on d.d_country=co.c_code 
 		left join dh_state s on (d.d_state=s.s_code and d.d_country=s.s_country) left join dh_city ci on d.d_city=ci.c_id
-		where d.d_id=\''.$did.'\' '; //d.d_name like \'%'.$name.'%\'
+		where d.d_id=\''.$did.'\' and d.d_deleted=0 '; //d.d_name like \'%'.$name.'%\'
 	if (($course > 0) and ($course_type <> '1 Day Course'))
 		$q .= " and d_course='$course'";
 	$q .= " limit 0,1";
@@ -710,6 +710,7 @@ function _get_donors( $name )
 		$course = $_REQUEST['course'];
 	$matches = array();
   	$query = db_select('dh_donor', 'd');
+  	$query->condition('d.d_deleted', 0);
         $course_type = '';
         if ( $course > 0)
            $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
@@ -1458,12 +1459,16 @@ function donation_main_form_submit($form, &$form_state)
 	{
 		$donor['d_occupation'] = '';
 		$donor['d_course'] = $data['d_course'];
+		$donor['d_created'] = date('Y-m-d H:i:s');
+		$donor['d_createdby'] = $user->uid;
  		//New Donor
-		$data['d_donor'] = db_insert('dh_donor')->fields($donor)->execute(); 
+		$data['d_donor'] = db_insert('dh_donor')->fields($donor)->execute();
 
 	}
 	else
 	{
+		$donor['d_updated'] = date('Y-m-d H:i:s');
+		$donor['d_updatedby'] = $user->uid;
 		db_update('dh_donor')->fields($donor)->condition('d_id', $data['d_donor'])->execute();
 	}
 	unset($data['d_name']); unset($data['d_id_no']); unset($data['d_country']); unset($data['d_state']);unset($data['d_city']); unset($data['d_id_type']);
@@ -3404,6 +3409,7 @@ function process_csv( $csv )
 
 function process_csv_array($courses, $students)
 {
+	global $user;
 	$count = 0;
 	$course_ids = array();
 	/* Fetch all course_ids, if not found then insert */
@@ -3434,7 +3440,7 @@ function process_csv_array($courses, $students)
 		$country = addslashes($donor['co']);
 		$state = addslashes($donor['st']);
 		$cid = $course_ids[$donor['course']];
-		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact'";
+		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact' and d_deleted=0";
 		$check_id = db_query($q)->fetchField();
 		$d = array();
 		$d['d_name'] =  mb_convert_encoding($donor['n'], "UTF-8");
@@ -3453,10 +3459,16 @@ function process_csv_array($courses, $students)
 		if ($check_id)
 		{
 			if ($cid)
+			{
+				$d['d_updated'] = date('Y-m-d H:i:s');
+				$d['d_updatedby'] = $user->uid;
 				db_update('dh_donor')->fields($d)->condition('d_id', $check_id)->execute();
+			}
 		}
 		else
 		{
+			$d['d_created'] = date('Y-m-d H:i:s');
+			$d['d_createdby'] = $user->uid;
 			db_insert('dh_donor')->fields($d)->execute();
 		}
 		$count += 1;
@@ -3508,6 +3520,7 @@ function donation_donor_upload_form_submit($form, &$form_state)
 
 function process_donor_csv( $csv )
 {
+	global $user;
 	$processed = 0;
 	$row = 0;
 	//drupal_set_message("I am called $csv");
@@ -3529,10 +3542,12 @@ function process_donor_csv( $csv )
 				continue;
 			if ( ! in_array(strtoupper($data[3]), array_keys($it_types) ))
 				continue;
-			$d = array();			
+			$d = array();
 			$d['d_id_type'] = $it_types[strtoupper($data[3])];
 			$d['d_id_no'] = $data[4];
-			db_update('dh_donor')->fields($d)->condition('d_name', $data[0])->condition('d_contact', $data[1])->condition('d_email', $data[2])->execute();
+			$d['d_updated'] = date('Y-m-d H:i:s');
+			$d['d_updatedby'] = $user->uid;
+			db_update('dh_donor')->fields($d)->condition('d_name', $data[0])->condition('d_contact', $data[1])->condition('d_email', $data[2])->condition('d_deleted', 0)->execute();
 			//$q = "update dh_donor set d_id_type='".$d['d_id_type']."', d_id_no='".$d['d_id_no']."' where d_name='".addslashes($data[0])."' and d_contact='".$data[1]."' and d_email='".addslashes($data[2])."'";
 			//drupal_set_message($q);
 			$processed += 1;
