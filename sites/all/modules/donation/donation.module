@@ -2116,7 +2116,7 @@ function donation_report_form($form, &$form_state)
 		$append = "";
 		if (user_access('access own donation') && (!user_access('administer donation')))
 		{
-			$append = " and d_createdBy='".$user->uid."'";
+			$append = " and d.d_createdBy='".$user->uid."'";
 		}
 		//drupal_set_message("I am called");
 		$data = $form_state['storage'];
@@ -2896,7 +2896,7 @@ function download_donor_master($params)
 	$append = "";
 	if (user_access('access own donation') && (!user_access('administer donation')))
 	{
-		$append = " and d_createdBy='".$user->uid."'";
+		$append = " and d.d_createdBy='".$user->uid."'";
 	}
 	$q = "select don.d_name 'Name', don.d_contact as 'Mobile', don.d_email as 'Email', it.it_name as 'ID Type', 
 		 don.d_id_no as 'ID No'
@@ -3043,7 +3043,7 @@ function donation_report_xls()
 	$append = "";
 	if (user_access('access own donation') && (!user_access('administer donation')))
 	{
-		$append = " and d_createdBy='".$user->uid."'";
+		$append = " and d.d_createdBy='".$user->uid."'";
 	}
 
 	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'Full Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
