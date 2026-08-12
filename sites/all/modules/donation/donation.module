@@ -6,6 +6,7 @@ use Mailgun\Mailgun;
 require_once('dana-s3.inc');
 require('Numbers/Words.php');
 include_once "font.inc";
+include_once "donor.inc";
 define('RECEPIT_PREFIX', 'ER-');
 
 
@@ -46,6 +47,9 @@ function donation_permission()
 	$perms['unassign donation tags'] = array("title" => 'Unassign Donation Tags');
 	$perms['access donor'] = array('title' => t('Access Donor Details') );
     $perms['download receipt'] = array("title" => 'Download Receipt');
+	$perms['view donors'] = array('title' => t('View Donors') );
+	$perms['edit donors'] = array('title' => t('Edit Donors') );
+	$perms['delete donors'] = array('title' => t('Delete Donors') );
 
 	return $perms;
 }
@@ -189,6 +193,35 @@ function donation_menu()
            'page callback' => 'update_don_tags',
            'access arguments' => array('assign donation tags'),
            'type' => MENU_CALLBACK);
+
+	$items['donors'] = array( 'title' => t('Donors'),
+	     'page callback' => 'donor_list',
+	     'access arguments' => array('view donors'),
+	     'type' => MENU_NORMAL_ITEM);
+
+	$items['donors/edit/%donor_id'] = array( 'title' => t('Edit Donor'),
+	     'page callback' => 'drupal_get_form',
+	     'page arguments' => array('donor_form', 2),
+	     'access arguments' => array('edit donors'),
+	     'type' => MENU_CALLBACK);
+
+	$items['donors/delete/%donor_id'] = array( 'title' => t('Delete Donor'),
+	     'page callback' => 'donor_delete',
+	     'page arguments' => array(2),
+	     'access arguments' => array('delete donors'),
+	     'type' => MENU_CALLBACK);
+
+	$items['donors/log/%donor_id'] = array( 'title' => t('Donor Change History'),
+	     'page callback' => 'donor_changelog',
+	     'page arguments' => array(2),
+	     'access arguments' => array('view donors'),
+	     'type' => MENU_CALLBACK);
+
+	$items['donors/donations/%donor_id'] = array( 'title' => t('Donor Donations'),
+	     'page callback' => 'donor_donations',
+	     'page arguments' => array(2),
+	     'access arguments' => array('edit donors'),
+	     'type' => MENU_CALLBACK);
 
 
 	return $items;
@@ -783,6 +816,12 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	$attribs = array('class' => array('grid-stack') );
 	$attribs = array();
 
+	// Count donations mapped to this donor (edit flow only); drives the
+	// "shared donor" warning before editing shared donor details.
+	$donor_donation_count = 0;
+	if (!empty($edit_data['d_id']) && !empty($edit_data['donor_id']))
+		$donor_donation_count = (int) db_query("SELECT COUNT(*) FROM dh_donation WHERE d_donor = :d", array(':d' => $edit_data['donor_id']))->fetchField();
+
 	$query = "select c_code, c_name from dh_currency order by c_code";
 	$result = db_query( $query );
 	$currencies = array();
@@ -924,6 +963,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		var file = "";
 		'.$a.'
 		var currentForm;
+		var donor_donation_count = '.$donor_donation_count.';
 		var aadhaar_d = [
 		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
 		  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
@@ -1216,6 +1256,45 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 		$(document).ready(function(){
 
+			// Capture the donor original values on load, so at save time we can
+			// tell whether donor details were edited (and what changed) or the
+			// donation was reassigned to a different donor.
+			var donor_fields = {
+				"Name": function(){ return $("#edit-d-name").val(); },
+				"ID Type": function(){ return $("#edit-d-id-type option:selected").text(); },
+				"ID No": function(){ return $("#edit-d-id-no").val(); },
+				"Contact": function(){ return $("#edit-d-contact").val(); },
+				"Email": function(){ return $("#edit-d-email").val(); },
+				"Gender": function(){ return $("input[name=d_gender]:checked").val(); },
+				"Country": function(){ return $("#edit-d-country").val(); },
+				"State": function(){ return $("#edit-d-state").val(); },
+				"City": function(){ return $("#edit-d-city").val(); },
+				"Pincode": function(){ return $("#edit-d-pincode").val(); },
+				"Address": function(){ return $("#edit-d-address").val(); }
+			};
+			var orig_donor_id = $("input[name=d_donor]").val();
+			var orig_donor_name = $("#edit-d-name").val();
+			var orig_vals = {};
+			for (var ofk in donor_fields) orig_vals[ofk] = donor_fields[ofk]();
+
+			function donor_change_check() {
+				// Donation reassigned to a different donor.
+				if ($("input[name=d_donor]").val() != orig_donor_id) {
+					return confirm("This donation is being reassigned to a different donor:\n\n\"" + orig_donor_name + "\"   =>   \"" + $("#edit-d-name").val() + "\"\n\nDo you want to continue?");
+				}
+				// Same donor: which detail fields changed?
+				var changes = [];
+				for (var k in donor_fields) {
+					var now = donor_fields[k]();
+					if (now != orig_vals[k]) changes.push("- " + k + ": \"" + orig_vals[k] + "\"   =>   \"" + now + "\"");
+				}
+				if (changes.length > 0 && donor_donation_count > 1) {
+					return confirm("You are editing this donor, who is linked to " + donor_donation_count + " donations. Only THIS donation receipt will be regenerated; the other donation receipts stay unchanged.\n\nChanges to donor details:\n" + changes.join("\n") + "\n\nDo you want to continue?");
+				}
+				// Only donation fields changed (or single-donation donor): no prompt.
+				return true;
+			}
+
 			//$("#donation-main-form").gridster({widget_selector: ".grid-item"});
 			//$("#donation-main-form").shapeshift({ selector: ".form-item", colWidth: 200});
 			/*var grid = document.querySelector("#donation-main-form");
@@ -1405,6 +1484,11 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				else
 				{
 					event.preventDefault();
+					if (! donor_change_check())
+					{
+						$("input[type=submit]").prop("disabled", false);
+						return;
+					}
 					currentForm = this;
 					confirm_form();
 					//$(this).find(":submit").attr("disabled","disabled");
