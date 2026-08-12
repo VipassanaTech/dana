@@ -541,13 +541,16 @@ function donor_changelog_table($donor_id)
 	foreach (db_query("select it_code, it_name from dh_id_types") as $it)
 		$id_types[$it->it_code] = $it->it_name;
 
+	// Internal/scratch columns that are not meaningful donor changes.
+	$skip_cols = array('d_id' => 1, 'd_error' => 1);
+
 	$rows = array();
 	foreach ($result as $r) {
 		$data = json_decode($r->l_msg, TRUE);
 		if ($data && isset($data['new']) && is_array($data['new'])) {
 			$parts = array();
 			foreach ($data['new'] as $col => $newval) {
-				if ($col == 'd_id')
+				if (isset($skip_cols[$col]))
 					continue;
 				$oldval = isset($data['old'][$col]) ? $data['old'][$col] : '';
 				if ($col == 'd_id_type') {
@@ -557,6 +560,9 @@ function donor_changelog_table($donor_id)
 				$parts[] = '<strong>' . check_plain(donor_changelog_field_label($col)) . '</strong>: "'
 					. check_plain($oldval) . '" &rarr; "' . check_plain($newval) . '"';
 			}
+			// Nothing meaningful changed (e.g. only the internal d_error field) — skip.
+			if (empty($parts))
+				continue;
 			$what = implode('<br>', $parts);
 		}
 		else {
