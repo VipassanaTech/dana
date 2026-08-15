@@ -816,10 +816,14 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	$attribs = array('class' => array('grid-stack') );
 	$attribs = array();
 
+	// Edit flow = an existing donation is loaded (URL /donation/edit/<id>, so
+	// $edit_data has d_id). The shared-donor warning applies only when editing.
+	$is_edit = !empty($edit_data['d_id']) ? 1 : 0;
+
 	// Count donations mapped to this donor (edit flow only); drives the
 	// "shared donor" warning before editing shared donor details.
 	$donor_donation_count = 0;
-	if (!empty($edit_data['d_id']) && !empty($edit_data['donor_id']))
+	if ($is_edit && !empty($edit_data['donor_id']))
 		$donor_donation_count = (int) db_query("SELECT COUNT(*) FROM dh_donation WHERE d_donor = :d", array(':d' => $edit_data['donor_id']))->fetchField();
 
 	$query = "select c_code, c_name from dh_currency order by c_code";
@@ -963,6 +967,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		var file = "";
 		'.$a.'
 		var currentForm;
+		var is_edit = '.$is_edit.';
 		var donor_donation_count = '.$donor_donation_count.';
 		var aadhaar_d = [
 		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -1278,7 +1283,12 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			for (var ofk in donor_fields) orig_vals[ofk] = donor_fields[ofk]();
 
 			function donor_change_check() {
-				// Donation reassigned to a different donor.
+				// Warn only when EDITING an existing donation (URL /donation/edit/<id>).
+				// When creating a donation, picking an existing donor is the normal
+				// path -- not a reassignment -- so skip the warnings entirely.
+				if (! is_edit)
+					return true;
+				// Donation reassigned to a different existing donor.
 				if ($("input[name=d_donor]").val() != orig_donor_id) {
 					return confirm("This donation is being reassigned to a different donor:\n\n\"" + orig_donor_name + "\"   =>   \"" + $("#edit-d-name").val() + "\"\n\nDo you want to continue?");
 				}
