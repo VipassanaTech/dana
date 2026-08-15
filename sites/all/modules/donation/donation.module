@@ -690,10 +690,14 @@ function _get_donor_detail()
 	$q .= " limit 0,1";
 	$return = db_query($q);
 
+	// How many donations this donor is linked to -- drives the shared-donor
+	// warning when the donor's master details are edited (create or edit flow).
+	$dcount = (int) db_query("SELECT COUNT(*) FROM dh_donation WHERE d_donor = :d", array(':d' => $did))->fetchField();
+
   	foreach ($return as $row) {
     	$matches[] = array('name' => check_plain($row->d_name), 'address' => $row->d_address, 'country' => $row->country, 'did' => $row->d_id,
     		'state' => $row->s_name, 'city' => $row->city, 'contact' => $row->d_contact, 'idtype' => $row->d_id_type, 'idno' => $row->d_id_no, 'pincode' => $row->d_pincode,
-    		'email' => $row->d_email, 'gender' => $row->d_gender);
+    		'email' => $row->d_email, 'gender' => $row->d_gender, 'count' => $dcount);
   	}
 	if ( $addr == '0' ) 
 	{
@@ -969,6 +973,25 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		var currentForm;
 		var is_edit = '.$is_edit.';
 		var donor_donation_count = '.$donor_donation_count.';
+		// Donor change-detection baseline. Hoisted here (out of document.ready) so
+		// the autocomplete select handler (get_donor_details) can refresh it when
+		// an existing donor is picked -- needed so editing a picked donor warns in
+		// the create flow too, not just when editing an existing donation.
+		var selected_donor_count = donor_donation_count;
+		var donor_fields = {
+			"Name": function(){ return $("#edit-d-name").val(); },
+			"ID Type": function(){ return $("#edit-d-id-type option:selected").text(); },
+			"ID No": function(){ return $("#edit-d-id-no").val(); },
+			"Contact": function(){ return $("#edit-d-contact").val(); },
+			"Email": function(){ return $("#edit-d-email").val(); },
+			"Gender": function(){ return $("input[name=d_gender]:checked").val(); },
+			"Country": function(){ return $("#edit-d-country").val(); },
+			"State": function(){ return $("#edit-d-state").val(); },
+			"City": function(){ return $("#edit-d-city").val(); },
+			"Pincode": function(){ return $("#edit-d-pincode").val(); },
+			"Address": function(){ return $("#edit-d-address").val(); }
+		};
+		var orig_vals = {};
 		var aadhaar_d = [
 		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
 		  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
@@ -1075,6 +1098,13 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				$("input:radio[name=d_gender][value="+data[0].gender+"]").click();
 
 				$("input[name=d_donor]").attr("value",data[0].did);
+
+				// Existing donor picked: remember how many donations they are linked
+				// to, and reset the change baseline to their stored values, so any
+				// later edit to the donor master details triggers the shared-donor
+				// warning (this is what makes the warning work in the create flow).
+				selected_donor_count = data[0].count;
+				for (var ofk in donor_fields) orig_vals[ofk] = donor_fields[ofk]();
 			});
 		}
 
@@ -1263,45 +1293,35 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 			// Capture the donor original values on load, so at save time we can
 			// tell whether donor details were edited (and what changed) or the
-			// donation was reassigned to a different donor.
-			var donor_fields = {
-				"Name": function(){ return $("#edit-d-name").val(); },
-				"ID Type": function(){ return $("#edit-d-id-type option:selected").text(); },
-				"ID No": function(){ return $("#edit-d-id-no").val(); },
-				"Contact": function(){ return $("#edit-d-contact").val(); },
-				"Email": function(){ return $("#edit-d-email").val(); },
-				"Gender": function(){ return $("input[name=d_gender]:checked").val(); },
-				"Country": function(){ return $("#edit-d-country").val(); },
-				"State": function(){ return $("#edit-d-state").val(); },
-				"City": function(){ return $("#edit-d-city").val(); },
-				"Pincode": function(){ return $("#edit-d-pincode").val(); },
-				"Address": function(){ return $("#edit-d-address").val(); }
-			};
+			// donation was reassigned to a different donor. (donor_fields, orig_vals
+			// and selected_donor_count are declared in the outer scope so the
+			// autocomplete select handler can refresh them.)
 			var orig_donor_id = $("input[name=d_donor]").val();
 			var orig_donor_name = $("#edit-d-name").val();
-			var orig_vals = {};
 			for (var ofk in donor_fields) orig_vals[ofk] = donor_fields[ofk]();
 
 			function donor_change_check() {
-				// Warn only when EDITING an existing donation (URL /donation/edit/<id>).
-				// When creating a donation, picking an existing donor is the normal
-				// path -- not a reassignment -- so skip the warnings entirely.
-				if (! is_edit)
-					return true;
-				// Donation reassigned to a different existing donor.
-				if ($("input[name=d_donor]").val() != orig_donor_id) {
+				var cur = $("input[name=d_donor]").val();
+				// EDIT flow only: the donation was reassigned to a different existing
+				// donor. On a NEW donation there is no original donor to reassign from.
+				if (is_edit && cur != orig_donor_id) {
 					return confirm("This donation is being reassigned to a different donor:\n\n\"" + orig_donor_name + "\"   =>   \"" + $("#edit-d-name").val() + "\"\n\nDo you want to continue?");
 				}
-				// Same donor: which detail fields changed?
-				var changes = [];
-				for (var k in donor_fields) {
-					var now = donor_fields[k]();
-					if (now != orig_vals[k]) changes.push("- " + k + ": \"" + orig_vals[k] + "\"   =>   \"" + now + "\"");
+				// Editing an EXISTING donor (cur != -1) rewrites that donor on every
+				// receipt they appear on. Warn when other receipts share this donor:
+				// edit flow -> donations beyond this one; create flow -> any existing.
+				if (cur != "-1") {
+					var changes = [];
+					for (var k in donor_fields) {
+						var now = donor_fields[k]();
+						if (now != orig_vals[k]) changes.push("- " + k + ": \"" + orig_vals[k] + "\"   =>   \"" + now + "\"");
+					}
+					var affected = is_edit ? (selected_donor_count - 1) : selected_donor_count;
+					if (changes.length > 0 && affected > 0) {
+						return confirm("You are editing this donor, who is linked to " + selected_donor_count + " donations. Only THIS donation receipt will be regenerated; the other donation receipts stay unchanged.\n\nChanges to donor details:\n" + changes.join("\n") + "\n\nDo you want to continue?");
+					}
 				}
-				if (changes.length > 0 && donor_donation_count > 1) {
-					return confirm("You are editing this donor, who is linked to " + donor_donation_count + " donations. Only THIS donation receipt will be regenerated; the other donation receipts stay unchanged.\n\nChanges to donor details:\n" + changes.join("\n") + "\n\nDo you want to continue?");
-				}
-				// Only donation fields changed (or single-donation donor): no prompt.
+				// New donor, or no donor-master change affecting other receipts: no prompt.
 				return true;
 			}
 
