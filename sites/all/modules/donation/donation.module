@@ -1302,21 +1302,25 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 			function donor_change_check() {
 				var cur = $("input[name=d_donor]").val();
-				// EDIT flow only: the donation was reassigned to a different existing
-				// donor. On a NEW donation there is no original donor to reassign from.
+				// EDIT flow: the donation was reassigned to a different existing donor.
+				// Confirm the reassignment, but do NOT stop here -- if the details of
+				// the newly chosen donor were also edited we must still warn below.
 				if (is_edit && cur != orig_donor_id) {
-					return confirm("This donation is being reassigned to a different donor:\n\n\"" + orig_donor_name + "\"   =>   \"" + $("#edit-d-name").val() + "\"\n\nDo you want to continue?");
+					if (! confirm("This donation is being reassigned to a different donor:\n\n\"" + orig_donor_name + "\"   =>   \"" + $("#edit-d-name").val() + "\"\n\nDo you want to continue?"))
+						return false;
 				}
 				// Editing an EXISTING donor (cur != -1) rewrites that donor on every
-				// receipt they appear on. Warn when other receipts share this donor:
-				// edit flow -> donations beyond this one; create flow -> any existing.
+				// receipt they appear on. Warn when other receipts share this donor.
+				// "affected" = other donations sharing this donor: exclude the current
+				// one only when it already belongs to this donor (same-donor edit); on
+				// a reassignment or a new donation it is not yet counted against them.
 				if (cur != "-1") {
 					var changes = [];
 					for (var k in donor_fields) {
 						var now = donor_fields[k]();
 						if (now != orig_vals[k]) changes.push("- " + k + ": \"" + orig_vals[k] + "\"   =>   \"" + now + "\"");
 					}
-					var affected = is_edit ? (selected_donor_count - 1) : selected_donor_count;
+					var affected = (is_edit && cur == orig_donor_id) ? (selected_donor_count - 1) : selected_donor_count;
 					if (changes.length > 0 && affected > 0) {
 						return confirm("You are editing this donor, who is linked to " + selected_donor_count + " donations. Only THIS donation receipt will be regenerated; the other donation receipts stay unchanged.\n\nChanges to donor details:\n" + changes.join("\n") + "\n\nDo you want to continue?");
 					}
