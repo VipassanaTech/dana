@@ -904,7 +904,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		'#description' => 'Type of ID','#weight' => 3.2, '#required' => 1, '#default_value' => get_default('d_id_type', $edit_data, '1') );
 
 	$form['d_id_no'] = array('#type' => 'textfield', '#size' => 20, '#title' => 'ID No', 
-		'#description' => 'Passport No for Foriegn Nationals','#weight' => 3.3, '#default_value' => get_default('d_id_no', $edit_data, '') );
+		'#description' => 'Passport No for Foreign Nationals','#weight' => 3.3, '#default_value' => get_default('d_id_no', $edit_data, '') );
 
 
 	$form['d_contact'] = array('#type' => 'textfield', '#size' => 30, '#title' => 'Contact No', 
@@ -1238,7 +1238,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				if ( $.trim( $("#edit-d-id-no").val() ) == "" )
 				{
 					res = false;
-					alert("'.t("Passport No is mandatory for Foriegn Students").'");
+					alert("'.t("Passport No is mandatory for Foreign Students").'");
 					$("#edit-d-id-no").focus();
 				}
 			}
