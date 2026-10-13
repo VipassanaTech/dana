@@ -4,6 +4,7 @@ require_once 'vendor/autoload.php';
 use Mailgun\Mailgun;
 
 require_once('dana-s3.inc');
+require_once('cancel-stamp.inc');
 require('Numbers/Words.php');
 include_once "font.inc";
 include_once "donor.inc";
@@ -73,8 +74,8 @@ function donation_menu()
 	       'type' => MENU_CALLBACK);
 
 	$items['donation/delete/%donation_id'] = array( 'title' => t('Delete Donation Detail'),
-	       'page callback' => 'donation_report',
-		   'page arguments' => array(1),
+	       'page callback' => 'donation_cancel',
+		   'page arguments' => array(2),
 		   'access callback' => 'donation_delete_access',
 	       'type' => MENU_CALLBACK);
 
@@ -142,7 +143,7 @@ function donation_menu()
 	     'access arguments' => array('access income tax report'));
 
 
-	$items['download-receipt/%adonation_id'] = array( 'title' => t('Download Receipt'),
+	$items['download-receipt/%receipt_donation_id'] = array( 'title' => t('Download Receipt'),
 	     'page arguments' => array(1),
 	     'page callback' => 'download_receipt',
 	     'access arguments' => array('download receipt'));
@@ -158,7 +159,7 @@ function donation_menu()
 	     'page callback' => 'send_whatsapp',
 	     'access arguments' => array('access donation report'));
 
-	$items['view-log/%adonation_id'] = array( 'title' => t('Log Details'),
+	$items['view-log/%receipt_donation_id'] = array( 'title' => t('Log Details'),
 	     'page arguments' => array('view_log_form', 1),
 	     'page callback' => 'drupal_get_form',
 	     'access arguments' => array('view log'),
@@ -239,6 +240,21 @@ function adonation_id_load( $id )
 	$result = $query->execute();
 	if ( $result->rowCount() <= 0 )
 		return $res;
+	return $id;
+}
+
+// Like adonation_id_load but also allows cancelled donations, so their receipt
+// (stamped CANCELLED) and log can still be viewed.
+function receipt_donation_id_load( $id )
+{
+	global $user;
+	$query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id);
+	if (user_access('access own donation') && (!user_access('administer donation')) )
+	{
+		$query->condition('d_createdBy', $user->uid);
+	}
+	if ( $query->execute()->rowCount() <= 0 )
+		return false;
 	return $id;
 }
 
@@ -573,15 +589,35 @@ function donation_manage()
 }
 
 
+// Cancel a donation. Only a POST from the report's cancel dialog (token + cancelled
+// reason) cancels; the reason is prepended to the comment (see cancel-stamp.inc).
+function donation_cancel( $donation_id )
+{
+	global $user;
+	if ( ($_SERVER['REQUEST_METHOD'] != 'POST') || !isset($_POST['token']) || !drupal_valid_token($_POST['token'], 'donation-cancel-'.$donation_id) )
+	{
+		drupal_set_message(t('Please cancel the transaction from the Donation Report.'), 'error');
+		drupal_goto("donation-report");
+	}
+	$reason = donation_cancel_clean_reason(isset($_POST['cancel_reason']) ? $_POST['cancel_reason'] : '');
+	if ( !preg_match('/[\p{L}\p{N}]/u', $reason) || (drupal_strlen($reason) > DONATION_CANCEL_REASON_MAX) )
+	{
+		drupal_set_message(t('Transaction not cancelled: the cancelled reason is required (maximum @max characters).', array('@max' => DONATION_CANCEL_REASON_MAX)), 'error');
+		drupal_goto("donation-report");
+	}
+	$old_comment = db_query("select d_comment from dh_donation where d_id = :id", array(':id' => $donation_id))->fetchField();
+	db_update('dh_donation')->fields(array('d_deleted' => 1, 'd_deleted_date' => date('Y-m-d H:i:s'), 'd_deleted_by' => $user->uid,
+		'd_comment' => donation_cancel_comment($reason, $old_comment)))->condition('d_id', $donation_id)->condition('d_deleted', '0')->execute();
+	drupal_set_message("Transaction Cancelled successfully");
+	drupal_goto("donation-report");
+}
+
 function donation_report()
 {
 	global $user;
+	// Sites whose menu cache still routes donation/delete here (until it is rebuilt).
 	if (arg(1) == 'delete')
-	{
-		db_update('dh_donation')->fields(array('d_deleted' => 1, 'd_deleted_date' => date('Y-m-d H:i:s'), 'd_deleted_by' => $user->uid))->condition('d_id', arg(2))->execute();
-		drupal_set_message("Transaction Cancelled successfully");
-		drupal_goto("donation-report");
-	}
+		return donation_cancel(arg(2));
 
 	$form_state = array(); 
  	$form_state['storage']['r_from'] = date('Y-m-d');
@@ -2404,6 +2440,7 @@ function donation_report_form($form, &$form_state)
 				}
 				$vals = array_values($row);
 				$temp = explode("||", $row['Receipt No']);
+				$receipt_f = $temp[1];
 
         $row['Tags'] = "";
         if (user_access("view donation tags"))
@@ -2436,12 +2473,14 @@ function donation_report_form($form, &$form_state)
 					$row['Action 1'] = t('No Access');
 
 				$temp = explode("||", $row['Action 2']);
+				// The cancel dialog posts this token with the cancelled reason.
+				$delete_attr = array('attributes' => array('class' => array('delete-transaction'), 'data-token' => drupal_get_token('donation-cancel-'.$temp[0]), 'data-receipt' => $receipt_f));
 				if (user_access('delete transaction') || user_access('administer donation'))
 				{
 					if (($temp[1] == 0) && (!$row_deleted))
-						$row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], array('attributes' => array('class' => array('delete-transaction') ) ) );
+						$row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], $delete_attr );
           else if ( ($row['Txn Type'] <> 'razorpay') &&  ($temp[1] == 1) && user_access('edit delete after tally sync') && (!$row_deleted))
-            $row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], array('attributes' => array('class' => array('delete-transaction') ) ) )."\nSynced: ".$synced_date;
+            $row['Action 2'] = l(t("Delete"), "donation/delete/".$temp[0], $delete_attr )."\nSynced: ".$synced_date;
 					else
 						$row['Action 2'] = t('Synced');					
 				}
@@ -2450,11 +2489,16 @@ function donation_report_form($form, &$form_state)
 
 				if ($row['Action 3'])
 				{
-					$row['Action 3'] = l("Email", "/send-email/".$temp[0], array('attributes' => array('class' => array('send-email'), 'action-type' => 'email', 'did' => $temp[0] )) );
-					$row['Action 3'] .= "\n".l("Whatsapp", "/send-whatsapp/".$temp[0], array('attributes' => array('class' => array('send-whatsapp' ), 'action-type' => 'whatsapp', 'did' => $temp[0] )) );
+					// A cancelled receipt is not sent again; its log stays viewable.
+					$row['Action 3'] = '';
+					if (!$row_deleted)
+					{
+						$row['Action 3'] = l("Email", "/send-email/".$temp[0], array('attributes' => array('class' => array('send-email'), 'action-type' => 'email', 'did' => $temp[0] )) );
+						$row['Action 3'] .= "\n".l("Whatsapp", "/send-whatsapp/".$temp[0], array('attributes' => array('class' => array('send-whatsapp' ), 'action-type' => 'whatsapp', 'did' => $temp[0] )) );
+					}
 					if (isset($temp[3]) && ($temp[3] > 0) )
 					{
-						$row['Action 3'] .= "\n".l("View Log", "/view-log/".$temp[0], array('attributes' => array('target' => '_blank')));
+						$row['Action 3'] = ltrim($row['Action 3']."\n".l("View Log", "/view-log/".$temp[0], array('attributes' => array('target' => '_blank'))));
 					}
 				}
 
@@ -2626,7 +2670,46 @@ function donation_report_form($form, &$form_state)
 			
 			$("a.delete-transaction").unbind("click");
 			$("a.delete-transaction").on( "click", function(e){
-				return confirm("Are you sure you want to cancel the transaction?");
+				e.preventDefault();
+				var href = $(this).attr("href");
+				var token = $(this).attr("data-token");
+				$.confirm({
+					title: "Cancel transaction " + $(this).attr("data-receipt"),
+					content: "<form>Cancelled reason (required, up to 150 characters). It is added to the comment and shown on the cancelled receipt.<br/>" +
+						"<textarea class=\"cancel-reason\" maxlength=\"150\" rows=\"3\" style=\"width:100%;box-sizing:border-box;margin-top:6px\"></textarea></form>",
+					columnClass: "medium",
+					buttons: {
+						formSubmit: {
+							text: "Cancel Transaction",
+							btnClass: "btn-red",
+							action: function () {
+								var reason = $.trim(this.$content.find(".cancel-reason").val());
+								if (reason == "")
+								{
+									$.alert("Please enter the cancelled reason.");
+									return false;
+								}
+								var f = $("<form method=\"post\"></form>").attr("action", href);
+								f.append($("<input type=\"hidden\" name=\"token\">").val(token));
+								f.append($("<input type=\"hidden\" name=\"cancel_reason\">").val(reason));
+								$("body").append(f);
+								f.submit();
+							}
+						},
+						close: {
+							text: "Close"
+						}
+					},
+					onContentReady: function () {
+						var jc = this;
+						this.$content.find("form").on("submit", function (e) {
+							e.preventDefault();
+							jc.$$formSubmit.trigger("click");
+						});
+						this.$content.find(".cancel-reason").focus();
+					}
+				});
+				return false;
 			});
 
 			$("a.send-email,a.send-whatsapp").unbind("click");
@@ -3888,12 +3971,20 @@ function generate_10bd( $year, $quarter = '', $month = '' )
 function download_receipt( $donation_id )
 {
 	global $base_url;
-	$q = "select d_receipt from dh_donation where d_id=".$donation_id;
-	$f = db_query($q)->fetchField();
+	$row = db_query("select d_receipt, d_receipt_f, d_deleted, d_comment from dh_donation where d_id = :id", array(':id' => $donation_id))->fetchAssoc();
+	$f = $row['d_receipt'];
 	$fname = str_replace('private://', '', $f);
 	if (  substr($fname,0,8) == 'receipts' )
 		$fname = str_replace(array('https://', 'http://', '.dana.vridhamma.org'), '', $base_url)."/".$fname;
 	$data = s3_get_file('vri-dana', $fname, 'stream');
+
+	// A cancelled receipt is only ever served stamped CANCELLED; the copy in S3 stays as issued.
+	if ( $data['success'] && ($row['d_deleted'] == '1') )
+	{
+		$data['data'] = donation_cancel_stamp_pdf($data['data'], $row['d_receipt_f'], donation_cancel_reason($row['d_comment']));
+		if ($data['data'] === FALSE)
+			return t('The cancelled receipt could not be prepared. Please try again later.');
+	}
 
 	header("Content-Type: application/pdf");
 	header('Content-disposition:inline; filename="'.basename($f).'"');
