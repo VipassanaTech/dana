@@ -1507,7 +1507,7 @@ function donation_reprint_describe($donor_id, $fy)
 	return '<p>' . t('It will be printed with the donor details @which FY @f:', array('@which' => $e['own'] ? t('recorded for') : t('current for'), '@f' => donation_fy_label($fy))) . '<br>'
 		. check_plain($dv['dv_name'] . ', ' . $dv['dv_address'] . ' - ' . $dv['dv_pincode'] . ' ' . $dv['dv_city'] . ' ' . $dv['dv_state_code'] . ' ' . $dv['dv_country_code']
 			. ($id !== '' ? ', ' . $id : '') . ', ' . $dv['dv_contact']) . '</p>'
-		. '<p>' . t('The receipt number does not change. The current PDF is kept as an archived copy first.') . '</p>';
+		. '<p>' . t('The receipt number does not change.') . '</p>';    // the archive copy (P1) is kept but not mentioned to centres
 }
 
 function donation_reprint_form($form, &$form_state, $donation_id)
@@ -1540,7 +1540,7 @@ function donation_reprint_form_submit($form, &$form_state)
 	$r = generate_receipt($id, 1);
 	if (!$r)
 	{
-		drupal_set_message(t('The receipt was NOT reprinted: the current PDF could not be archived first. Please try again later.'), 'error');
+		drupal_set_message(t('The receipt was NOT reprinted (storage error). Please try again later.'), 'error');
 		return;
 	}
 	donation_log_reprint($id);
@@ -1601,7 +1601,7 @@ function donation_reprint_batch_finished($success, $results, $operations)
 	$failed = isset($results['failed']) ? count($results['failed']) : 0;
 	drupal_set_message(format_plural($done, '1 receipt reprinted.', '@count receipts reprinted.'));
 	if ($failed || !$success)
-		drupal_set_message(t('@n receipt(s) were not reprinted (the current PDF could not be archived, or an error occurred). Please try again later.', array('@n' => $failed)), 'error');
+		drupal_set_message(t('@n receipt(s) were not reprinted (storage error). Please try again later.', array('@n' => $failed)), 'error');
 }
 
 /** F13: the Donor Master upload report (one message). */

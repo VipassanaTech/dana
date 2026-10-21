@@ -1720,7 +1720,7 @@ function donation_main_form_submit($form, &$form_state)
 	{
 		$r = generate_receipt($donation_id, $is_edit ? 1 : 0);
 		if ($r === FALSE)
-			drupal_set_message(t('The donation was saved, but its receipt was NOT reprinted because the current PDF could not be archived first. Use "Reprint" on the Donation Report later.'), 'error');
+			drupal_set_message(t('The donation was saved, but its receipt was NOT reprinted (storage error). Use "Reprint" on the Donation Report later.'), 'error');
 		elseif ($r)
 			$receipt = $r;
 	}
@@ -4272,7 +4272,8 @@ function view_log_form( $form, &$form_state, $donation_id )
 	$q = "select d_receipt_f from dh_donation where d_id=$donation_id";
 	$receipt_num = db_query($q)->fetchField();
 	drupal_set_title('Log Details for Receipt '.$receipt_num);
-	$q = "select l_msg, l_tstamp, u.name from dh_log l left join users u on (l.l_user=u.uid) where l.l_identifier = $donation_id and l_module='dh_donation'";
+	// "Receipt archived" rows (P1 archive copies) stay in dh_log for admins but are not shown to centres
+	$q = "select l_msg, l_tstamp, u.name from dh_log l left join users u on (l.l_user=u.uid) where l.l_identifier = $donation_id and l_module='dh_donation' and not (l.l_event <=> 'Receipt archived')";
 	$hand = db_query($q);
 	$rows = array();
 	while( $row = $hand->fetchAssoc())
