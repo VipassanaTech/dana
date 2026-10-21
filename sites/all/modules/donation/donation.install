@@ -30,4 +30,27 @@ function donation_schema()
     return $schema;
 }
 
+/** Implements hook_requirements(): donor-versioning completeness on admin/reports/status (M9, F20). */
+function donation_requirements($phase)
+{
+	$req = array();
+	if ($phase != 'runtime')
+		return $req;
+	$s = donation_versioning_state();
+	$missing = array();
+	if (!$s['tables'])
+		$missing[] = 'dh_donor_version/dh_donor_fy (rev-3 shape)';
+	if (!$s['d_fy'])
+		$missing[] = 'dh_donation.d_fy';
+	foreach (array('dh_don_bi_fy', 'dh_don_bu_fy', 'dh_donor_bu_freeze', 'dh_donor_au') as $t)
+		if (empty($s['triggers'][$t]))
+			$missing[] = $t;
+	$req['donation_donorver'] = array(
+		'title' => t('Dana donor versioning'),
+		'value' => $missing ? t('Missing: @m', array('@m' => implode(', ', $missing))) : t('Complete (code version @v)', array('@v' => DONATION_DONORVER_CODE)),
+		'severity' => !donation_versioning_ready() ? REQUIREMENT_ERROR : ($missing ? REQUIREMENT_WARNING : REQUIREMENT_OK),
+	);
+	return $req;
+}
+
 ?>

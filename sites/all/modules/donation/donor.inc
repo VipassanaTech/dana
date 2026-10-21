@@ -211,18 +211,30 @@ function donor_form($form, &$form_state, $donor = NULL)
 {
 	if (!$donor)
 		return array('#markup' => t('Donor not found.'));
+	if (!donation_versioning_require(NULL, 'read'))
+		return array('#markup' => '');
 
-	$id_types = array();
-	foreach (db_query("select it_code, it_name from dh_id_types order by it_code") as $row)
-		$id_types[$row->it_code] = $row->it_name;
+	// Donor versioning: the form shows (and the signed baseline records) the CURRENT details as one dv record (L22).
+	$live = donor_live_dv($donor['d_id']);
+	$show = donor_display_from_row($live, array('d_gender' => 'male'));
+	$id_types = donor_id_type_options($show['d_id_type']);
+	$cur = donation_cur_fy();
 
-	$d = function ($field, $default = '') use ($donor) {
-		return (isset($donor[$field]) && $donor[$field] !== '') ? $donor[$field] : $default;
+	$d = function ($field, $default = '') use ($show) {
+		return (isset($show[$field]) && $show[$field] !== '') ? $show[$field] : $default;
 	};
 
 	$form['#attributes'] = array('class' => array('donor-form'));
 
 	$form['d_id'] = array('#type' => 'hidden', '#value' => $donor['d_id']);
+	// M4: what this form showed (fy 0 = the current record); checked in donor_form_validate()
+	$enc = donor_baseline_encode($donor['d_id'], 0, array('dv' => $live, 'own' => FALSE, 'since' => NULL), $live);
+	$form['donor_baseline'] = array('#type' => 'hidden', '#value' => $enc['json']);
+	$form['donor_baseline_sig'] = array('#type' => 'hidden', '#value' => $enc['sig']);
+	$form['form_cur_fy'] = array('#type' => 'hidden', '#value' => $cur);
+	$note = donor_apr_may_note($donor['d_id']);
+	if ($note !== '')
+		$form['apr_may_note'] = array('#markup' => '<div class="messages warning">' . check_plain($note) . '</div>', '#weight' => -10);
 
 	$form['d_name'] = array('#type' => 'textfield', '#title' => t('Donor Name'), '#size' => 50,
 		'#required' => TRUE, '#default_value' => $d('d_name'));
@@ -231,7 +243,7 @@ function donor_form($form, &$form_state, $donor = NULL)
 		'#options' => array('male' => t('Male'), 'female' => t('Female'), 'ms' => t('Organization')),
 		'#default_value' => $d('d_gender', 'male'));
 
-	$form['d_id_type'] = array('#type' => 'select', '#title' => t('ID Type'),
+	$form['d_id_type'] = array('#type' => 'select', '#title' => t('ID Type'), '#validated' => TRUE,
 		'#options' => $id_types, '#required' => TRUE, '#default_value' => $d('d_id_type', '1'));
 
 	$form['d_id_no'] = array('#type' => 'textfield', '#title' => t('ID No'), '#size' => 20,
@@ -247,19 +259,37 @@ function donor_form($form, &$form_state, $donor = NULL)
 		'#required' => TRUE, '#default_value' => $d('d_pincode'));
 
 	$form['d_country'] = array('#type' => 'textfield', '#title' => t('Country'), '#size' => 30,
-		'#required' => TRUE, '#default_value' => $d('country'));
+		'#required' => TRUE, '#default_value' => $d('d_country'));
 
 	$form['d_state'] = array('#type' => 'textfield', '#title' => t('State'), '#size' => 30,
-		'#required' => TRUE, '#default_value' => $d('state'));
+		'#required' => TRUE, '#default_value' => $d('d_state'));
 
 	$form['d_city'] = array('#type' => 'textfield', '#title' => t('City'), '#size' => 30,
-		'#default_value' => $d('city'));
+		'#default_value' => $d('d_city'));
 
 	$form['d_address'] = array('#type' => 'textarea', '#title' => t('Address'), '#rows' => 2,
 		'#maxlength' => 200, '#default_value' => $d('d_address'));
 
 	$form['d_occupation'] = array('#type' => 'textfield', '#title' => t('Occupation'), '#size' => 40,
 		'#default_value' => $d('d_occupation'));
+
+	// F10 apply-to-FY: past financial years with donations; ticking one makes that year use the details saved here.
+	$past = array();
+	$apply_opts = array();
+	foreach (donor_fy_rows($donor['d_id']) as $r)
+	{
+		$fy = (int) $r['d_fy'];
+		if ($fy <= 0 || $fy >= $cur)
+			continue;
+		$past[] = array('fy' => $fy, 'label' => donation_fy_label($fy), 'n' => (int) $r['n_all']);
+		$apply_opts[$fy] = 'FY ' . donation_fy_label($fy) . ' - '
+			. ($r['fy_own'] ? t('own details since @d', array('@d' => date('d/m/Y', strtotime($r['df_updated'])))) : t('follows current details'))
+			. (donation_10bd_due_passed($fy) ? ' ' . t('(10BD due date passed)') : '');
+	}
+	if ($apply_opts)
+		$form['apply_fy'] = array('#type' => 'checkboxes', '#title' => t('Also use these details for past financial years'),
+			'#options' => $apply_opts, '#weight' => 45,
+			'#description' => t('Only tick a year to replace the details that year keeps (for example to correct a mistake in it). Unticked years keep their own details.'));
 
 	$form['submit'] = array('#type' => 'submit', '#value' => t('Update Donor'), '#weight' => 50);
 	$form['cancel'] = array('#type' => 'markup', '#markup' => ' ' . l(t('Cancel'), 'donors'), '#weight' => 51);
@@ -270,6 +300,10 @@ function donor_form($form, &$form_state, $donor = NULL)
 		'#markup' => l(t('View change history'), 'donors/log/' . $donor['d_id']),
 		'#weight' => 99,
 	);
+
+	// L28: which details each financial year uses
+	$form['fy_summary'] = array('#type' => 'item', '#title' => t('Donor details by financial year'),
+		'#markup' => donor_fy_summary_table($donor['d_id'], donor_fy_summary_live($live)), '#weight' => 98);
 
 	// Read-only, paginated list of donations impacted by editing this donor.
 	$form['mapped'] = array(
@@ -286,6 +320,8 @@ function donor_form($form, &$form_state, $donor = NULL)
 	// Pincode autofill + PAN/Aadhaar ID validation + shared-donor warning.
 	$js = '(function ($) {
 		var donor_don_count = ' . (int) $don_count . ';
+		var donor_past_fys = ' . drupal_json_encode($past) . ';
+		var donor_freeze = ' . (donation_versioning_freeze_active() ? 1 : 0) . ';
 		var aadhaar_d = [
 		  [0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],
 		  [3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],
@@ -334,9 +370,6 @@ function donor_form($form, &$form_state, $donor = NULL)
 			return true;
 		}
 		$(document).ready(function () {
-			if (donor_don_count > 1) {
-				alert("Note: this donor is linked to " + donor_don_count + " donations. Your changes here update the donor details shared by all of them. Existing receipts will NOT be changed.");
-			}
 			$("#edit-d-pincode").on("blur", function () {
 				var code = $.trim($(this).val());
 				if (code == "") return;
@@ -350,11 +383,28 @@ function donor_form($form, &$form_state, $donor = NULL)
 			});
 			$("#donor-form").submit(function (e) {
 				if (! donor_check_id()) { e.preventDefault(); return false; }
-				if (donor_don_count > 1) {
-					if (! confirm("This donor is linked to " + donor_don_count + " donations. Your changes update the donor details shared by all of them. Existing receipts will NOT be changed.\n\nDo you want to continue?")) {
-						e.preventDefault();
-						return false;
-					}
+				var changed = false;
+				$("#donor-form").find("input[type=text], textarea").each(function () { if (this.value != this.defaultValue) changed = true; });
+				$("#donor-form").find("select option").each(function () { if (this.selected != this.defaultSelected) changed = true; });
+				$("#donor-form").find("input[type=radio]").each(function () { if (this.checked != this.defaultChecked) changed = true; });
+				var ticked = [];
+				$("#donor-form").find("input[type=checkbox][name^=apply_fy]:checked").each(function () { ticked.push(parseInt($(this).val(), 10)); });
+				var msg = "";
+				if (donor_freeze && donor_past_fys.length && (changed || ticked.length)) {
+					var keep = [], use = [];
+					$.each(donor_past_fys, function (i, p) {
+						var s = "FY " + p.label + " (" + p.n + ")";
+						if ($.inArray(p.fy, ticked) >= 0) use.push(s); else keep.push(s);
+					});
+					if (keep.length) msg += "These past years keep the details they have now: " + keep.join(", ") + ".\n";
+					if (use.length) msg += "These past years will use the new details: " + use.join(", ") + ".\n";
+					msg += "Receipts of this year show the new details. Receipts already issued are not changed; if any of them now differ, you will be offered to reprint them after saving.\n\nDo you want to continue?";
+				}
+				else if (!donor_freeze && changed && donor_don_count > 1)
+					msg = "This donor is linked to " + donor_don_count + " donations. Your changes update the donor details shared by all of them. Existing receipts will NOT be changed.\n\nDo you want to continue?";
+				if (msg && ! confirm(msg)) {
+					e.preventDefault();
+					return false;
 				}
 			});
 		});
@@ -373,46 +423,90 @@ function donor_form_validate($form, &$form_state)
 		form_set_error('d_contact', t('Contact number is required.'));
 	if (trim($v['d_email']) != '' && !valid_email_address(trim($v['d_email'])))
 		form_set_error('d_email', t('Please enter a valid email address.'));
+	if (!donation_versioning_require('d_name'))
+		return;
+	$in = $form_state['input'];
+	$b = donor_baseline_decode(isset($in['donor_baseline']) ? $in['donor_baseline'] : '', isset($in['donor_baseline_sig']) ? $in['donor_baseline_sig'] : '');
+	if (!$b || (int) $b['donor'] !== (int) $v['d_id'])
+	{
+		form_set_error('d_name', t('This form is out of date. Please reload the page and enter the changes again.'));
+		return;
+	}
+	$cur = donation_cur_fy();
+	if (isset($in['form_cur_fy']) && (int) $in['form_cur_fy'] !== $cur)
+	{
+		form_set_error('d_name', t('The financial year changed while this form was open. Please reload the page and enter the changes again.'));
+		return;
+	}
+	$defaults = array('d_gender' => 'male');
+	$groups = donor_changed_groups($v, $b['live'], 'donor', $defaults);
+	if (in_array('id', $groups, TRUE) && !donor_id_type_allowed($v['d_id_type'], $b['live']))
+		form_set_error('d_id_type', t('Please choose a valid ID type.'));
+	list(, $errs) = donor_form_new_values($v, $b['live'], $groups, FALSE, 'donor');
+	foreach ($errs as $k => $m)
+		form_set_error($k, $m);
+	$apply = array();
+	if (!empty($v['apply_fy']))
+		foreach ($v['apply_fy'] as $fy => $on)
+		{
+			if (!$on)
+				continue;
+			$fy = (int) $fy;
+			$has = db_query('SELECT 1 FROM dh_donation WHERE d_donor = :d AND d_fy = :f LIMIT 1', array(':d' => (int) $v['d_id'], ':f' => $fy))->fetchField();
+			if ($fy <= 0 || $fy >= $cur || !$has)
+				form_set_error('apply_fy', t('FY @f cannot be changed here.', array('@f' => donation_fy_label($fy))));
+			else
+				$apply[] = $fy;
+		}
+	$form_state['donor_plan'] = array('donor' => (int) $v['d_id'], 'baseline' => $b, 'groups' => $groups, 'apply_fys' => $apply, 'cur' => $cur);
 }
 
+/** HEAD donor.inc:378-417. */
 function donor_form_submit($form, &$form_state)
 {
 	global $user;
-	$v = $form_state['values'];
-
-	$country_code = get_country($v['d_country']);
-	$state_code = get_state($v['d_state'], $country_code);
-	$city_id = ($v['d_city'] != '' && $country_code != '' && $state_code != '')
-		? get_city($v['d_city'], $state_code, $country_code) : 0;
-
-	$error = '';
-	if ($country_code == '')
-		$error .= 'No Country ' . $v['d_country'] . "\n";
-	if ($state_code == '')
-		$error .= 'No State ' . $v['d_state'] . "\n";
-	if ($city_id == 0 && $v['d_city'] != '')
-		$error .= 'No City ' . $v['d_city'] . "\n";
-
-	$donor = array(
-		'd_name' => $v['d_name'],
-		'd_gender' => $v['d_gender'],
-		'd_id_type' => $v['d_id_type'],
-		'd_id_no' => strtoupper($v['d_id_no']),
-		'd_contact' => $v['d_contact'],
-		'd_email' => $v['d_email'],
-		'd_pincode' => $v['d_pincode'],
-		'd_country' => $country_code,
-		'd_state' => $state_code,
-		'd_city' => $city_id,
-		'd_address' => $v['d_address'],
-		'd_occupation' => $v['d_occupation'],
-		'd_error' => $error,
-		'd_updated' => date('Y-m-d H:i:s'),
-		'd_updatedby' => $user->uid,
-	);
-
-	db_update('dh_donor')->fields($donor)->condition('d_id', $v['d_id'])->execute();
-	drupal_set_message(t('Donor %name updated.', array('%name' => $v['d_name'])));
+	$p = $form_state['donor_plan'];
+	$id = $p['donor'];
+	$applied = array();
+	$w = array('cols' => array(), 'conflicts' => array());
+	$txn = db_transaction();
+	try
+	{
+		$now = donor_live_dv($id, TRUE);
+		if (!$now)
+			throw new Exception(t('This donor no longer exists.'));
+		$before = donor_fy_printed_map($id);
+		if ($p['groups'])
+		{
+			list($new) = donor_form_new_values($form_state['values'], $p['baseline']['live'], $p['groups'], TRUE, 'donor');
+			$w = donor_write_live_groups($id, $now, $new, $p['groups'], $p['baseline']['live'], $user->uid, 'donor');
+		}
+		foreach ($p['apply_fys'] as $fy)                                   // after the UPDATE: the trigger froze the other years at OLD
+			if (donor_apply_to_fy($id, $fy, $user->uid))
+				$applied[] = donation_fy_label($fy);
+		if (donation_cur_fy(TRUE) !== $p['cur'])
+		{
+			$txn->rollback();
+			drupal_set_message(t('The financial year changed while saving. Nothing was saved; please check and save again.'), 'error');
+			$form_state['rebuild'] = TRUE;
+			return;
+		}
+	}
+	catch (Throwable $e)   // PHP 7: also TypeError; never let $txn commit half a submit
+	{
+		$txn->rollback();
+		watchdog('donation', 'Save rolled back: @m (@f:@l)', array('@m' => $e->getMessage(), '@f' => $e->getFile(), '@l' => $e->getLine()), WATCHDOG_ERROR);   // watchdog_exception() accepts Exception only
+		drupal_set_message(t('The donor could not be saved; nothing was changed. (@m)', array('@m' => $e->getMessage())), 'error');
+		$form_state['rebuild'] = TRUE;
+		return;
+	}
+	unset($txn);
+	drupal_set_message($w['cols'] ? t('Donor %name updated.', array('%name' => $form_state['values']['d_name'])) : t('No donor details were changed.'));
+	if ($applied)
+		drupal_set_message(t('These past years now use the saved details: FY @f.', array('@f' => implode(', FY ', $applied))));
+	if ($w['conflicts'])
+		drupal_set_message(donor_conflict_message($id, $w['conflicts'], $p['baseline']['ts']), 'warning');
+	donor_reprint_offer($id, $before, 0);
 	$form_state['redirect'] = 'donors';
 }
 
@@ -422,10 +516,14 @@ function donor_form_submit($form, &$form_state)
 function donor_mapped_donations_table($donor_id)
 {
 	$header = array(t('Receipt No'), t('Date'), t('Amount'), t('Currency'),
-		t('Type'), t('Category'), t('Status'));
+		t('Type'), t('Category'), t('Status'), t('FY'), t('Donor details'));
 
 	$query = db_select('dh_donation', 'd')->extend('PagerDefault');
-	$query->fields('d', array('d_id', 'd_receipt_f', 'd_date', 'd_amount', 'd_currency', 'd_type', 'd_category', 'd_deleted'));
+	$query->fields('d', array('d_id', 'd_receipt_f', 'd_date', 'd_amount', 'd_currency', 'd_type', 'd_category', 'd_deleted', 'd_fy'));
+	// L28: which donor details the donation's financial year uses
+	$query->leftJoin('dh_donor_fy', 'dfy', 'dfy.df_donor = d.d_donor AND dfy.df_fy = d.d_fy');
+	$query->leftJoin('dh_donor_version', 'dv', 'dv.dv_id = dfy.df_version AND dv.dv_donor = dfy.df_donor');
+	$query->addExpression('(dv.dv_id IS NOT NULL)', 'fy_own');
 	$query->condition('d.d_donor', $donor_id);
 	$query->orderBy('d.d_date', 'DESC')->orderBy('d.d_id', 'DESC');
 	$query->limit(10);
@@ -445,6 +543,8 @@ function donor_mapped_donations_table($donor_id)
 			check_plain(ucfirst($r->d_type)),
 			check_plain($r->d_category),
 			$r->d_deleted ? t('Cancelled') : t('Active'),
+			$r->d_fy > 0 ? donation_fy_label((int) $r->d_fy) : '',
+			$r->fy_own ? t('Own (that year)') : t('Current'),
 		);
 	}
 
@@ -464,6 +564,8 @@ function donor_donations($donor)
 {
 	if (!$donor)
 		return MENU_NOT_FOUND;
+	if (!donation_versioning_require(NULL, 'read'))   // the table joins the versioning tables
+		return '';
 
 	drupal_set_title(t('Donations for @name', array('@name' => $donor['d_name'])));
 	$out = donor_mapped_donations_table($donor['d_id']);
@@ -528,7 +630,7 @@ function donor_changelog_table($donor_id)
 
 	$query = db_select('dh_log', 'l')->extend('PagerDefault');
 	$query->leftJoin('users', 'u', 'l.l_user = u.uid');
-	$query->fields('l', array('l_msg', 'l_tstamp', 'l_user'));
+	$query->fields('l', array('l_id', 'l_msg', 'l_tstamp', 'l_user', 'l_event'));
 	$query->addField('u', 'name', 'uname');
 	$query->condition('l.l_module', 'dh_donor');
 	$query->condition('l.l_identifier', $donor_id);
@@ -545,8 +647,57 @@ function donor_changelog_table($donor_id)
 	$skip_cols = array('d_id' => 1, 'd_error' => 1);
 
 	$rows = array();
+	// Generic rows store codes for country/state/city: show their names (per-request caches).
+	$country_names = $state_names = $city_names = array();
+	$code_name = function ($col, $val, $row_country) use (&$country_names, &$state_names, &$city_names) {
+		if ($val === '' || $val === NULL)
+			return $val;
+		if ($col == 'd_country') {
+			if (!isset($country_names[$val]))
+				$country_names[$val] = db_query('SELECT c_name FROM dh_country WHERE c_code = :c ORDER BY c_id LIMIT 1', array(':c' => $val))->fetchField();
+			return $country_names[$val] ? $country_names[$val] : $val;
+		}
+		if ($col == 'd_state') {
+			$k = $row_country . '|' . $val;
+			if (!isset($state_names[$k]))
+				$state_names[$k] = db_query('SELECT s_name FROM dh_state WHERE s_code = :s ORDER BY (s_country = :c) DESC, s_id LIMIT 1', array(':s' => $val, ':c' => (string) $row_country))->fetchField();
+			return $state_names[$k] ? $state_names[$k] : $val;
+		}
+		if ($col == 'd_city') {
+			if (!isset($city_names[$val]))
+				$city_names[$val] = db_query('SELECT c_city FROM dh_city WHERE c_id = :i', array(':i' => (int) $val))->fetchField();
+			return $city_names[$val] ? $city_names[$val] : $val;
+		}
+		return $val;
+	};
+	// A row logs only the changed columns, so a state code is resolved in the country the donor had then:
+	// the "old" country of the first later row that changed the country, else the current country.
+	$country_changes = array();
+	foreach (db_query("SELECT l_id, l_msg FROM dh_log WHERE l_module = 'dh_donor' AND l_identifier = :d AND l_msg LIKE :p
+		AND (l_event IS NULL OR l_event NOT LIKE 'FY %') ORDER BY l_id", array(':d' => $donor_id, ':p' => '%"d_country"%')) as $c) {
+		$m = json_decode($c->l_msg, TRUE);
+		if (isset($m['old']['d_country']))
+			$country_changes[(int) $c->l_id] = (string) $m['old']['d_country'];
+	}
+	$cur_country = (string) db_query('SELECT d_country FROM dh_donor WHERE d_id = :d', array(':d' => $donor_id))->fetchField();
+	$country_after = function ($l_id) use ($country_changes, $cur_country) {
+		foreach ($country_changes as $id => $old)
+			if ($id > $l_id)
+				return $old;
+		return $cur_country;
+	};
+
 	foreach ($result as $r) {
 		$data = json_decode($r->l_msg, TRUE);
+		// Donor versioning events (freeze, year correction, apply-to-FY, skipped freeze): one readable sentence (already escaped).
+		if ($r->l_event !== NULL && strncmp($r->l_event, 'FY ', 3) === 0) {
+			$what = donor_changelog_fy_text($r->l_event, is_array($data) ? $data : array(), $donor_id);
+			$who = ($r->l_user == 0)
+				? t('System / Sync')
+				: ($r->uname !== NULL ? check_plain($r->uname) : t('uid @u', array('@u' => $r->l_user)));
+			$rows[] = array($what, check_plain($r->l_tstamp), $who);
+			continue;
+		}
 		if ($data && isset($data['new']) && is_array($data['new'])) {
 			$parts = array();
 			foreach ($data['new'] as $col => $newval) {
@@ -556,6 +707,12 @@ function donor_changelog_table($donor_id)
 				if ($col == 'd_id_type') {
 					$oldval = isset($id_types[$oldval]) ? $id_types[$oldval] : $oldval;
 					$newval = isset($id_types[$newval]) ? $id_types[$newval] : $newval;
+				}
+				elseif ($col == 'd_country' || $col == 'd_state' || $col == 'd_city') {
+					$nc = isset($data['new']['d_country']) ? $data['new']['d_country'] : $country_after((int) $r->l_id);
+					$oc = isset($data['old']['d_country']) ? $data['old']['d_country'] : $nc;
+					$oldval = $code_name($col, $oldval, $oc);
+					$newval = $code_name($col, $newval, $nc);
 				}
 				$parts[] = '<strong>' . check_plain(donor_changelog_field_label($col)) . '</strong>: "'
 					. check_plain($oldval) . '" &rarr; "' . check_plain($newval) . '"';
@@ -592,9 +749,15 @@ function donor_changelog($donor)
 {
 	if (!$donor)
 		return MENU_NOT_FOUND;
+	if (!donation_versioning_require(NULL, 'read'))   // FY log rows read the snapshots
+		return '';
 
 	drupal_set_title(t('Change history: @name', array('@name' => $donor['d_name'])));
-	$out = donor_changelog_table($donor['d_id']);
+	$out = '';
+	$live = donor_live_dv($donor['d_id']);
+	if ($live)
+		$out .= '<h3>' . t('Donor details by financial year') . '</h3>' . donor_fy_summary_table($donor['d_id'], donor_fy_summary_live($live));
+	$out .= donor_changelog_table($donor['d_id']);
 	$out .= '<p>' . l(t('&laquo; Back to donors'), 'donors', array('html' => TRUE)) . '</p>';
 	return $out;
 }

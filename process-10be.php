@@ -11,9 +11,15 @@ define('DRUPAL_ROOT', getcwd());
 require_once DRUPAL_ROOT . '/includes/bootstrap.inc';
 if ( count($argv) < 3)
 {
-   echo "Usage: php ".$argv[0]." <subdomain> <csv-file>\n\n";
+   echo "Usage: php ".$argv[0]." <subdomain> <csv-file> [<fy>] [--dry-run]\n";
+   echo "  <fy>: the financial year the certificates are for: 2025, 2025-26 or 2025-2026 (default: the year that ended on the last 31 March)\n";
+   echo "  --dry-run: only write lookup.csv (who each certificate would go to); nothing is sent or moved\n\n";
    exit(1);
 }
+// donor versioning (R12): optional FY argument and --dry-run (anywhere after the CSV path)
+$dry_run = in_array('--dry-run', $argv, TRUE);
+$cli = array_values(array_diff(array_slice($argv, 1), array('--dry-run')));
+$fy_arg = isset($cli[2]) ? $cli[2] : NULL;
 
 $csv_file = $argv[2];
 if (! file_exists($csv_file))
@@ -33,9 +39,16 @@ if ( conf_path() == 'sites/default')
    exit(1);
 }
 
-$fin = (date('Y')-1)."-".date('Y');
+// L32: the certified FY comes from the argument (default CUR-1 by the DB clock), not from date('Y')-1
+$fy = tenbe_parse_fy($fy_arg, donation_cur_fy());
+if ($fy <= 0)
+{
+   echo "Invalid financial year '".$fy_arg."' (use e.g. 2025, 2025-26 or 2025-2026; it must be a past year)\n\n";
+   exit(1);
+}
+$fin = $fy."-".($fy + 1);
 
-echo "financial year: $fin\n";
+echo "financial year: $fin".($dry_run ? " (dry run: nothing is sent or moved)" : "")."\n";
 
 $site = variable_get("site_name", "");
 echo $site."\n";
@@ -48,18 +61,33 @@ if(!$site_display)
 
 $subject = "Form 10BE Certificate for Your Donation to $site_display";
 
+// R12 (donor versioning): the certified FY's donors (that year's details) are loaded once; the current
+// records are loaded only if a certificate's UIN is not in that year (fallback with a name match).
+$versioned = db_table_exists('dh_donor_fy') && db_table_exists('dh_donor_version');
+$fy_map = tenbe_load_fy($fy, $versioned);
+$live = NULL;
+$loader = function () use (&$live) { if ($live === NULL) $live = tenbe_load_live(); return $live; };
+
 if (($handle = fopen($csv_file, "r")) !== FALSE)
 {
     $dir = dirname($csv_file);
     $f = basename($csv_file);
-    $csv_u = fopen($dir."/unprocessed.csv", "w");
-    $csv_p = fopen($dir."/processed.csv", "w");
+    if (!$dry_run)
+    {
+      $csv_u = fopen($dir."/unprocessed.csv", "w");
+      $csv_p = fopen($dir."/processed.csv", "w");
+    }
+    $csv_l = fopen($dir."/lookup.csv", "w");
+    fputcsv($csv_l, array('file', 'uin', 'fin', 'step', 'donor_id', 'reason'));
     while (($data = fgetcsv($handle, 1000, ",")) !== FALSE)
     {
     	$id_no = trim(str_replace( array(" ", ",", "-"), '', $data[1]));
-    	$q = "select d_email, d_contact from dh_donor where REPLACE(REPLACE(REPLACE(d_id_no, ' ', ''), '\\t', ''), '\\n', '')='".$id_no."' order by d_id desc limit 1";
-    	//echo "$q\n";
-    	$row = db_query($q)->fetchAssoc();
+      $tmp = explode("_", basename($data[0]));
+      list($found, $step, $reason) = tenbe_pick($fy_map, $loader, $id_no, isset($tmp[1]) ? $tmp[1] : '');
+      $row = $found ? array('d_email' => (string) $found['email'], 'd_contact' => (string) $found['contact']) : FALSE;
+      fputcsv($csv_l, array(basename($data[0]), $id_no, $fin, $step, $found ? $found['donor_id'] : '', $reason));
+      if ($dry_run)
+        continue;
       $email_sent = false;
       $whatsapp_sent = false;
       if ($row && $id_no && ( trim($row['d_email']) || trim($row['d_contact']) ))
@@ -67,8 +95,6 @@ if (($handle = fopen($csv_file, "r")) !== FALSE)
         $row['d_email'] = trim($row['d_email']);
         $row['d_contact'] = trim($row['d_contact']);
     	   //echo "$id_no => ".$row['d_email']." -> ".$row['d_contact']."\n";
-
-         $tmp = explode("_", basename($data[0]));
 
     	   if ($row['d_email'])
     	   {
@@ -112,7 +138,11 @@ With warm regards,\n\n
       }
 
     }
-    fclose($csv_p);
-    fclose($csv_u);
+    if (!$dry_run)
+    {
+      fclose($csv_p);
+      fclose($csv_u);
+    }
+    fclose($csv_l);
     fclose($handle);
 }

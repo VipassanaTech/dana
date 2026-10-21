@@ -1,6 +1,7 @@
 <?php
 require 'vendor/autoload.php';
 use Aws\S3\S3Client;
+use Aws\S3\Exception\S3Exception;
 
 function s3_put_file($bucket, $file_local, $file_remote){
     $retry = 5;
@@ -164,3 +165,67 @@ function s3_set_env(){
     return array('s3' => $s3, 'e' => null);
 }
 
+/**
+ * Server-side copy inside the bucket (no download). Returns array('success', 'missing', 'message').
+ * 'missing' = the source object does not exist (404 / NoSuchKey): nothing to archive.
+ */
+function s3_copy_file($bucket, $src_key, $dst_key)
+{
+    $retry = 5;
+    $ret = array('success' => false, 'missing' => false, 'message' => '');
+
+    $s3_result = s3_set_env();
+    if (! $s3_result['s3']) {
+        $ret['message'] = "S3: Not able to create s3 client for copying '$src_key' to '$dst_key' in bucket '$bucket'\n".$s3_result['e'];
+        return $ret;
+    }
+    $s3 = $s3_result['s3'];
+
+    for ($i = 1; $i <= $retry; $i++) {
+        try {
+            $s3->copyObject(array(
+                'Bucket'            => $bucket,
+                'Key'               => $dst_key,
+                'CopySource'        => $bucket.'/'.str_replace('%2F', '/', rawurlencode($src_key)),
+                'MetadataDirective' => 'COPY',
+                'ACL'               => 'private',
+            ));
+            $ret['success'] = true;
+            return $ret;
+        }
+        catch (S3Exception $e) {
+            if ($e->getStatusCode() == 404 || $e->getAwsErrorCode() == 'NoSuchKey') {
+                $ret['missing'] = true;
+                $ret['message'] = "S3: '$src_key' not found in bucket '$bucket'";
+                return $ret;
+            }
+            if ($i == $retry) {
+                $ret['message'] = "S3: error copying '$src_key' to '$dst_key' in bucket '$bucket'.\n".$e->getMessage();
+                return $ret;
+            }
+            usleep(500000);
+        }
+        catch (Exception $e) {
+            if ($i == $retry) {
+                $ret['message'] = "S3: error copying '$src_key' to '$dst_key' in bucket '$bucket'.\n".$e->getMessage();
+                return $ret;
+            }
+            usleep(500000);
+        }
+    }
+    return $ret;
+}
+
+/** TRUE / FALSE, or NULL when S3 cannot be asked. (doesObjectExist() answers TRUE on AccessDenied.) */
+function s3_object_exists($bucket, $key)
+{
+    $s3_result = s3_set_env();
+    if (! $s3_result['s3'])
+        return null;
+    try {
+        return $s3_result['s3']->doesObjectExist($bucket, $key) ? true : false;
+    }
+    catch (Exception $e) {
+        return null;
+    }
+}

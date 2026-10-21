@@ -5,10 +5,14 @@ use Mailgun\Mailgun;
 
 require_once('dana-s3.inc');
 require_once('cancel-stamp.inc');
+require_once('tenbe.inc');
 require('Numbers/Words.php');
 include_once "font.inc";
 include_once "donor.inc";
+require_once('donor-versioning.inc');
 define('RECEPIT_PREFIX', 'ER-');
+define('DONATION_DONORVER_CODE', 3);                 // read by the phase-C runner (M10 code-version gate)
+define('DONATION_DONORVER_REQUIRE_FREEZE', FALSE);   // flip to TRUE in the deploy right after phase 3 completed fleet-wide (M9)
 
 
 function donation_help($path, $arg)
@@ -222,6 +226,19 @@ function donation_menu()
 	     'page callback' => 'donor_donations',
 	     'page arguments' => array(2),
 	     'access arguments' => array('edit donors'),
+	     'type' => MENU_CALLBACK);
+
+	// Donor versioning (M12): reprint receipts with the donor details of their financial year.
+	$items['donation/reprint/%adonation_id'] = array( 'title' => t('Reprint Receipt'),
+	     'page callback' => 'drupal_get_form',
+	     'page arguments' => array('donation_reprint_form', 2),
+	     'access callback' => 'donation_reprint_access',
+	     'type' => MENU_CALLBACK);
+
+	$items['donors/reprint/%donor_id/%'] = array( 'title' => t('Reprint Receipts'),
+	     'page callback' => 'drupal_get_form',
+	     'page arguments' => array('donation_reprint_fy_form', 2, 3),
+	     'access callback' => 'donation_reprint_access',
 	     'type' => MENU_CALLBACK);
 
 
@@ -568,24 +585,22 @@ function donation_admin_form($form, &$form_state)
 }
 
 
+/** HEAD donation.module:571-589. */
 function donation_manage()
 {
+	// Until the menu is rebuilt (F5), donation/reprint/<id> falls back to this callback.
+	if (arg(1) == 'reprint')
+		return (donation_reprint_access() && adonation_id_load(arg(2))) ? drupal_get_form('donation_reprint_form', arg(2)) : MENU_ACCESS_DENIED;
 	$row = array();
 	if (arg(2) > 0)
 	{
-		$id = arg(2);
-		//drupal_set_message("called - $id");
-		$query = "select d.*,don.d_id as 'donor_id',don.d_name,don.d_contact,don.d_gender,don.d_id_type,don.d_id_no,don.d_address,don.d_pincode,don.d_email,
-			co.c_name,s.s_name,ci.c_city from dh_donation d 
-			left join dh_donor don on d.d_donor=don.d_id left join dh_country co on don.d_country=co.c_code left join 
-			dh_state s on (don.d_state=s.s_code and don.d_country=s.s_country) left join dh_city ci on don.d_city=ci.c_id 
-			where d.d_id='$id'";
-		$res = db_query($query);
-		$row = $res->fetchAssoc();
+		if (!donation_versioning_require(NULL, 'read'))
+			return '';
+		$row = db_query('SELECT d.* FROM dh_donation d WHERE d.d_id = :id', array(':id' => (int) arg(2)))->fetchAssoc();
+		if ($row && (int) $row['d_donor'] > 0)
+			$row = donation_prefill_donor($row, (int) $row['d_donor'], (int) $row['d_fy']);
 	}
-
-	$out = drupal_get_form('donation_main_form', $row);
-	return $out;
+	return drupal_get_form('donation_main_form', $row ? $row : array());
 }
 
 
@@ -710,38 +725,54 @@ function _get_location_from_pincode()
 
 function _get_donor_detail()
 {
-	//$name = $_REQUEST['name'];
-	$did = $_REQUEST['did'];
-	$course = $_REQUEST['course'];
-	$addr = $_REQUEST['addr'];
-	$course_type = '';
+	// R2 (donor versioning): the donor's details as used by financial year `fy` (optional; 0 = current year),
+	// returned RAW (no check_plain: the donation form compares raw values, N1), plus the current details,
+	// per-year donation counts and the signed baseline the form posts back (M4).
+	$did = isset($_REQUEST['did']) ? (int) $_REQUEST['did'] : 0;
+	$fy = isset($_REQUEST['fy']) ? (int) $_REQUEST['fy'] : 0;
 	$matches = array();
-	if ( $course > 0)
-  	   $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
-	$q = 'select d.*, co.c_name as \'country\', s.s_name, ci.c_city as \'city\' from dh_donor d left join dh_country co on d.d_country=co.c_code 
-		left join dh_state s on (d.d_state=s.s_code and d.d_country=s.s_country) left join dh_city ci on d.d_city=ci.c_id
-		where d.d_id=\''.$did.'\' and d.d_deleted=0 '; //d.d_name like \'%'.$name.'%\'
-	if (($course > 0) and ($course_type <> '1 Day Course'))
-		$q .= " and d_course='$course'";
-	$q .= " limit 0,1";
-	$return = db_query($q);
-
-	// How many donations this donor is linked to -- drives the shared-donor
-	// warning when the donor's master details are edited (create or edit flow).
-	$dcount = (int) db_query("SELECT COUNT(*) FROM dh_donation WHERE d_donor = :d", array(':d' => $did))->fetchField();
-
-  	foreach ($return as $row) {
-    	$matches[] = array('name' => check_plain($row->d_name), 'address' => $row->d_address, 'country' => $row->country, 'did' => $row->d_id,
-    		'state' => $row->s_name, 'city' => $row->city, 'contact' => $row->d_contact, 'idtype' => $row->d_id_type, 'idno' => $row->d_id_no, 'pincode' => $row->d_pincode,
-    		'email' => $row->d_email, 'gender' => $row->d_gender, 'count' => $dcount);
-  	}
-	if ( $addr == '0' ) 
+	$deleted = $did > 0 ? db_query('SELECT d_deleted FROM dh_donor WHERE d_id = :d', array(':d' => $did))->fetchField() : FALSE;
+	if (donation_versioning_ready('read') && $deleted !== FALSE && (string) $deleted === '0')
 	{
-		if (!empty($matches))
-			unset($matches['address']);
+		$qfy = $fy > 0 ? $fy : donation_cur_fy();
+		$eff = donor_effective_dv($did, $qfy);
+		$live = donor_live_dv($did);
+		if ($eff && $live)
+		{
+			$show = donor_display_from_row($eff['dv']);
+			$lshow = donor_display_from_row($live);
+			$fyc = array();
+			$fyca = array();
+			$count = 0;
+			$res = db_query("SELECT d_fy, COUNT(*) AS n, SUM(d_deleted = '0') AS n_active FROM dh_donation WHERE d_donor = :d GROUP BY d_fy", array(':d' => $did));
+			foreach ($res as $c)
+			{
+				$fyc[$c->d_fy] = (int) $c->n;
+				$fyca[$c->d_fy] = (int) $c->n_active;
+				$count += (int) $c->n;
+			}
+			$since = '';
+			$source = '';
+			if ($eff['own'])
+			{
+				$ymd = explode('-', substr((string) $eff['since'], 0, 10));
+				$since = count($ymd) == 3 ? $ymd[2] . '/' . $ymd[1] . '/' . $ymd[0] : '';
+				$source = (string) db_query('SELECT dv_source FROM dh_donor_version WHERE dv_id = :v', array(':v' => $eff['vid']))->fetchField();
+			}
+			$keys = array('name' => 'd_name', 'address' => 'd_address', 'country' => 'd_country', 'state' => 'd_state', 'city' => 'd_city',
+				'contact' => 'd_contact', 'idtype' => 'd_id_type', 'idno' => 'd_id_no', 'pincode' => 'd_pincode', 'email' => 'd_email', 'gender' => 'd_gender');
+			$m = array('did' => $did, 'count' => $count, 'fy' => $qfy, 'frozen' => $eff['own'] ? 1 : 0, 'fy_since' => $since, 'fy_source' => $source,
+				'fycounts' => $fyc, 'fycounts_active' => $fyca, 'live' => array());
+			foreach ($keys as $k => $col)
+			{
+				$m[$k] = $show[$col];
+				$m['live'][$k] = $lshow[$col];
+			}
+			$matches[] = $m + donation_donor_detail_baseline($did, $fy);
+		}
 	}
-  	drupal_json_output($matches);  	
-  	exit(0);
+	drupal_json_output($matches);
+	exit(0);
 }
 
 function _save_positions()
@@ -850,6 +881,14 @@ function get_default( $field, $data, $val )
 
 function donation_main_form($form, &$form_state, $edit_data = array())
 {	
+	// Rebuild after an FY change while the form was open (L25, M5): reload the donor part for the posted date's FY.
+	if (!empty($form_state['storage']['donor_reload']))
+	{
+		$r = $form_state['storage']['donor_reload'];
+		unset($form_state['storage']['donor_reload']);
+		if ($r['donor'] > 0)
+			$edit_data = donation_prefill_donor($edit_data, $r['donor'], donation_fy_from_date($r['date']));
+	}
 
 	//$attribs = array('#theme' => 'form_panel_table', '#form_panel_weights_decimal' => TRUE);
 	//$position = _get_positions();
@@ -859,12 +898,6 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	// Edit flow = an existing donation is loaded (URL /donation/edit/<id>, so
 	// $edit_data has d_id). The shared-donor warning applies only when editing.
 	$is_edit = !empty($edit_data['d_id']) ? 1 : 0;
-
-	// Count donations mapped to this donor (edit flow only); drives the
-	// "shared donor" warning before editing shared donor details.
-	$donor_donation_count = 0;
-	if ($is_edit && !empty($edit_data['donor_id']))
-		$donor_donation_count = (int) db_query("SELECT COUNT(*) FROM dh_donation WHERE d_donor = :d", array(':d' => $edit_data['donor_id']))->fetchField();
 
 	$query = "select c_code, c_name from dh_currency order by c_code";
 	$result = db_query( $query );
@@ -880,11 +913,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			$txn_types[trim($t[0])] = trim($t[1]);
 	}
 
-	$query = "select it_code, it_name from dh_id_types order by it_code";
-	$result = db_query( $query );
-	$id_types = array();
-	foreach($result as $row)
-		$id_types[ $row->it_code ] = $row->it_name;
+	$id_types = donor_id_type_options(isset($edit_data['d_id_type']) ? $edit_data['d_id_type'] : NULL);
 
 /*    $query = "select tm_display, tm_key from dh_tally_mapping where tm_foreign=0 and tm_enabled=1";
     $result = db_query( $query );
@@ -929,6 +958,9 @@ function donation_main_form($form, &$form_state, $edit_data = array())
             'ms' => 'Organization' ),
 		'#default_value' => get_default('d_gender', $edit_data, 'male'), '#weight' => 1.3, '#attributes' => array('class' => array('col-sm-4')) );
 
+	// L28: which details the donation's financial year uses (filled by DanaDonor.badge() from the signed baseline)
+	$form['donor_fy_badge'] = array('#markup' => '<div id="donor-fy-badge" class="messages status donor-fy-badge" style="display:none"></div>', '#weight' => 3.05);
+
 	$form['d_name'] = array('#type' => 'textfield', '#size' => 50, '#title' => 'Donor Name', 
 		'#attached' => array(
       		'library' => array(
@@ -936,7 +968,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
       	)),
 		'#required' => true, '#weight' => 3.1, '#default_value' => get_default('d_name',$edit_data, '') );
 
-	$form['d_id_type'] = array('#type' => 'select', '#title' => 'ID Type', '#options' => $id_types, 
+	$form['d_id_type'] = array('#type' => 'select', '#title' => 'ID Type', '#options' => $id_types, '#validated' => TRUE,
 		'#description' => 'Type of ID','#weight' => 3.2, '#required' => 1, '#default_value' => get_default('d_id_type', $edit_data, '1') );
 
 	$form['d_id_no'] = array('#type' => 'textfield', '#size' => 20, '#title' => 'ID No', 
@@ -958,7 +990,7 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		'#options' => $txn_types, /*array('cash' => 'Cash', 'cheque' => 'Cheque', 'neft' => 'NEFT', 'rtgs' => 'RTGS',  'card' => 'Credit/Debit Card'), */
 		'#default_value' => get_default('d_type',$edit_data,'cash'), '#weight' => 7.1, '#attributes' => array('class' => array('col-sm-12')));
 
-	$form['d_date'] = array('#type' => 'textfield', '#default_value' => get_default('d_date',$edit_data,date('Y-m-d')), '#title' => 'Transaction Date',
+	$form['d_date'] = array('#type' => 'textfield', '#default_value' => get_default('d_date',$edit_data,donation_db_today()), '#title' => 'Transaction Date',
 		'#attached' => array(
       		'library' => array(
         		array('system', 'ui.datepicker'),
@@ -985,10 +1017,17 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	$form['paper'] = array('#type' => 'checkbox', '#title' => 'Paper', '#weight' => 12.1,'#default_value' => variable_get("set_receipt_paper", 0));
 	$form['email'] = array('#type' => 'checkbox', '#title' => 'Email', '#weight' => 12.2,'#default_value' => variable_get("set_receipt_email", 0));
 	$form['whatsapp'] = array('#type' => 'checkbox', '#title' => 'Whatsapp', '#weight' => 12.3,'#default_value' => variable_get("set_receipt_whatsapp", 0));
-	$form['d_donor'] = array('#type' => 'hidden', '#value' =>  get_default('donor_id', $edit_data, '-1') );
+	$form['d_donor'] = array('#type' => 'hidden', '#default_value' => get_default('donor_id', $edit_data, '-1'));
+	// Donor versioning (M4, M5, M6): signed baseline of what the form showed, the scope chosen in the confirm
+	// dialog, and the current FY at render time. Names must not start with d_ (the submit copies d_* into dh_donation).
+	$form['donor_baseline'] = array('#type' => 'hidden', '#default_value' => get_default('donor_baseline', $edit_data, ''));
+	$form['donor_baseline_sig'] = array('#type' => 'hidden', '#default_value' => get_default('donor_baseline_sig', $edit_data, ''));
+	$form['donor_scope'] = array('#type' => 'hidden', '#default_value' => '');
+	$form['form_cur_fy'] = array('#type' => 'hidden', '#default_value' => donation_cur_fy());
+	$form['reprint'] = array('#type' => 'checkbox', '#title' => 'Reprint the receipt even if nothing printed changed', '#weight' => 12.4,
+		'#default_value' => 0, '#access' => (bool) $is_edit);
 	$form['sub'] = array('#type' => 'submit', '#value' => get_default('submit',$edit_data,'Submit'), '#weight' => 13.1);
 	
-	$form['sub1'] = array('#type' => 'markup', '#markup' => '<div id="dialog-confirm" title="Confirm Details"></div>');
 
 
 
@@ -1008,26 +1047,6 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		'.$a.'
 		var currentForm;
 		var is_edit = '.$is_edit.';
-		var donor_donation_count = '.$donor_donation_count.';
-		// Donor change-detection baseline. Hoisted here (out of document.ready) so
-		// the autocomplete select handler (get_donor_details) can refresh it when
-		// an existing donor is picked -- needed so editing a picked donor warns in
-		// the create flow too, not just when editing an existing donation.
-		var selected_donor_count = donor_donation_count;
-		var donor_fields = {
-			"Name": function(){ return $("#edit-d-name").val(); },
-			"ID Type": function(){ return $("#edit-d-id-type option:selected").text(); },
-			"ID No": function(){ return $("#edit-d-id-no").val(); },
-			"Contact": function(){ return $("#edit-d-contact").val(); },
-			"Email": function(){ return $("#edit-d-email").val(); },
-			"Gender": function(){ return $("input[name=d_gender]:checked").val(); },
-			"Country": function(){ return $("#edit-d-country").val(); },
-			"State": function(){ return $("#edit-d-state").val(); },
-			"City": function(){ return $("#edit-d-city").val(); },
-			"Pincode": function(){ return $("#edit-d-pincode").val(); },
-			"Address": function(){ return $("#edit-d-address").val(); }
-		};
-		var orig_vals = {};
 		var aadhaar_d = [
 		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
 		  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
@@ -1116,32 +1135,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 		function get_donor_details( donor_id )
 		{
-			var getaddr = 0;
-			$.getJSON("/get-donor-detail",{course: $("#edit-d-course").val(), did: donor_id, addr: getaddr}, function(data){
-				$("#edit-d-name").val(data[0].name);
-				$("#edit-d-country").val(data[0].country);
-				$("#edit-d-state").val(data[0].state);
-				$("#edit-d-city").val(data[0].city);
-				$("#edit-d-id-no").val(data[0].idno);
-				var itype = "1";
-				if (data[0].idtype != "0")
-					itype = data[0].idtype;
-				$("#edit-d-id-type").val(itype);
-				$("#edit-d-contact").val(data[0].contact);
-				$("#edit-d-pincode").val(data[0].pincode);
-				$("#edit-d-address").val(data[0].address);
-				$("#edit-d-email").val(data[0].email);
-				$("input:radio[name=d_gender][value="+data[0].gender+"]").click();
-
-				$("input[name=d_donor]").attr("value",data[0].did);
-
-				// Existing donor picked: remember how many donations they are linked
-				// to, and reset the change baseline to their stored values, so any
-				// later edit to the donor master details triggers the shared-donor
-				// warning (this is what makes the warning work in the create flow).
-				selected_donor_count = data[0].count;
-				for (var ofk in donor_fields) orig_vals[ofk] = donor_fields[ofk]();
-			});
+			// Donor versioning: fills every donor input from the signed baseline for the FY of the date (L29, M4).
+			DanaDonor.pick(donor_id);
 		}
 
 		function do_pincode( code )
@@ -1292,78 +1287,28 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		{
 			var t;
 			t = "<table>";
-			t += "<tr><td>Course</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-course option:selected").text()+"</b></td></tr>";
-			t += "<tr><td>Category</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-category option:selected").text()+"</b></td></tr>";
-			t += "<tr><td>Gender</td><td>&nbsp;&nbsp;</td><td><b>"+$("input[name=d_gender]:checked").next("label:first").text()+"</b></td></tr>";
-			t += "<tr><td>Donor Name</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-name").val()+"</b></td></tr>";
-			t += "<tr><td>NI/SSN/DIN/NID/PAN/ID</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-id-no").val()+"</b></td></tr>";
-			t += "<tr><td>Contact</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-contact").val()+"</b></td></tr>";
-			t += "<tr><td>Post/Zip Code/</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-pincode").val()+"</b></td></tr>";
-			t += "<tr><td>Email</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-email").val()+"</b></td></tr>";
-			t += "<tr><td>Country/State/City</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-country").val()+"/ "+$("#edit-d-state").val()+" / "+$("#edit-d-city").val()+"</b></td></tr>";
-			t += "<tr><td>Address</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-address").val()+"</b></td></tr>";			
-			t += "<tr><td>Type of Transaction</td><td>&nbsp;&nbsp;</td><td><b>"+$("input[name=d_type]:checked").next("label:first").text()+"</b></td></tr>";
-			t += "<tr><td>Amount</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-amount").val()+" "+$("#edit-d-currency").val()+"</b></td></tr>";
-			t += "<tr><td>Amount Details</td><td>&nbsp;&nbsp;</td><td><b>"+$("#edit-d-ref-no").val()+"/"+$("#edit-d-bank").val()+"/"+$("#edit-d-branch").val()+"/"+$("#edit-d-chq-date").val()+" </b></td></tr>";
+			t += "<tr><td>Course</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-course option:selected").text())+"</b></td></tr>";
+			t += "<tr><td>Category</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-category option:selected").text())+"</b></td></tr>";
+			t += "<tr><td>Gender</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("input[name=d_gender]:checked").next("label:first").text())+"</b></td></tr>";
+			t += "<tr><td>Donor Name</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-name").val())+"</b></td></tr>";
+			t += "<tr><td>NI/SSN/DIN/NID/PAN/ID</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-id-no").val())+"</b></td></tr>";
+			t += "<tr><td>Contact</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-contact").val())+"</b></td></tr>";
+			t += "<tr><td>Post/Zip Code/</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-pincode").val())+"</b></td></tr>";
+			t += "<tr><td>Email</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-email").val())+"</b></td></tr>";
+			t += "<tr><td>Country/State/City</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-country").val()+"/ "+$("#edit-d-state").val()+" / "+$("#edit-d-city").val())+"</b></td></tr>";
+			t += "<tr><td>Address</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-address").val())+"</b></td></tr>";			
+			t += "<tr><td>Type of Transaction</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("input[name=d_type]:checked").next("label:first").text())+"</b></td></tr>";
+			t += "<tr><td>Amount</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-amount").val()+" "+$("#edit-d-currency").val())+"</b></td></tr>";
+			t += "<tr><td>Amount Details</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-ref-no").val()+"/"+$("#edit-d-bank").val()+"/"+$("#edit-d-branch").val()+"/"+$("#edit-d-chq-date").val())+" </b></td></tr>";
 			t += "</table>";
-			$("#dialog-confirm").html(t);
-		    $( "#dialog-confirm" ).dialog({
-		      resizable: false,
-      		  height: "auto",
-      		  width: 400,
-      		  modal: true,
-      		  buttons: {
-        		"Confirm": function() {
-          			$( this ).dialog( "close" );
-          			currentForm.submit();
-        	    },
-        		Cancel: function() {
-          			$( this ).dialog( "close" );
-                $("input[type=submit]").prop("disabled", false);
-        		}
-      		  }
-    		});
+			// One confirm dialog (jquery-confirm): summary, reassignment notice, changed donor fields and, for a past FY,
+			// the scope choice, which it writes into the hidden donor_scope field before submitting (M5, M6).
+			DanaDonor.confirm(currentForm, t);
 		}
 
 		$(document).ready(function(){
 
-			// Capture the donor original values on load, so at save time we can
-			// tell whether donor details were edited (and what changed) or the
-			// donation was reassigned to a different donor. (donor_fields, orig_vals
-			// and selected_donor_count are declared in the outer scope so the
-			// autocomplete select handler can refresh them.)
-			var orig_donor_id = $("input[name=d_donor]").val();
-			var orig_donor_name = $("#edit-d-name").val();
-			for (var ofk in donor_fields) orig_vals[ofk] = donor_fields[ofk]();
-
-			function donor_change_check() {
-				var cur = $("input[name=d_donor]").val();
-				// EDIT flow: the donation was reassigned to a different existing donor.
-				// Confirm the reassignment, but do NOT stop here -- if the details of
-				// the newly chosen donor were also edited we must still warn below.
-				if (is_edit && cur != orig_donor_id) {
-					if (! confirm("This donation is being reassigned to a different donor:\n\n\"" + orig_donor_name + "\"   =>   \"" + $("#edit-d-name").val() + "\"\n\nDo you want to continue?"))
-						return false;
-				}
-				// Editing an EXISTING donor (cur != -1) rewrites that donor on every
-				// receipt they appear on. Warn when other receipts share this donor.
-				// "affected" = other donations sharing this donor: exclude the current
-				// one only when it already belongs to this donor (same-donor edit); on
-				// a reassignment or a new donation it is not yet counted against them.
-				if (cur != "-1") {
-					var changes = [];
-					for (var k in donor_fields) {
-						var now = donor_fields[k]();
-						if (now != orig_vals[k]) changes.push("- " + k + ": \"" + orig_vals[k] + "\"   =>   \"" + now + "\"");
-					}
-					var affected = (is_edit && cur == orig_donor_id) ? (selected_donor_count - 1) : selected_donor_count;
-					if (changes.length > 0 && affected > 0) {
-						return confirm("You are editing this donor, who is linked to " + selected_donor_count + " donations. Only THIS donation receipt will be regenerated; the other donation receipts stay unchanged.\n\nChanges to donor details:\n" + changes.join("\n") + "\n\nDo you want to continue?");
-					}
-				}
-				// New donor, or no donor-master change affecting other receipts: no prompt.
-				return true;
-			}
+			DanaDonor.badge();
 
 			//$("#donation-main-form").gridster({widget_selector: ".grid-item"});
 			//$("#donation-main-form").shapeshift({ selector: ".form-item", colWidth: 200});
@@ -1423,7 +1368,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			$("#edit-d-course").focus();
 			$("#edit-chequecardbank-transfer").hide();
 			$(".form-item-d-currency").hide();
-			$("#edit-d-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-18M", maxDate: 0});
+			$("#edit-d-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-18M", maxDate: 0, onSelect: function () { $(this).change(); }});
+			$("#edit-d-date").change(DanaDonor.refetch);
                         $("#edit-d-chq-date").datepicker({dateFormat: "yy-mm-dd", minDate: "-18M", maxDate: "6M"});
 
 			$("input[name=\"d_type\"]:radio").change(function(){
@@ -1463,7 +1409,12 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				},
       			minLength: 2,
       			select: function( event, ui ) {
+      				event.preventDefault();
+      				$(this).val(ui.item.label.split(" - ")[0]);
       				get_donor_details(ui.item.value);
+		        },
+		        focus: function( event ) {
+		        	event.preventDefault();
 		        },
 		        open: function() {
 		           $( this ).removeClass( "ui-corner-all" ).addClass( "ui-corner-top" );
@@ -1475,19 +1426,11 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 			$("#edit-d-name").keyup(function(){
 				if (!$(this).val())
-				{
-					//alert("called");
-					$("input[name=d_donor]").attr("value" ,"-1");
-					$("#edit-d-country").val("");
-					$("#edit-d-state").val("");
-					$("#edit-d-city").val("");
-					$("#edit-d-id-no").val("");
-					$("#edit-d-contact").val("");
-					$("#edit-d-pincode").val("");
-					$("#edit-d-address").val("");
-					$("#edit-d-email").val("");
-				}
+					DanaDonor.clear();
 			});
+
+			// L18: upper-case the ID while typing only (a stored lowercase PAN that is not touched is not a change)
+			$("#edit-d-id-no").bind("input", function () { var p = this.selectionStart; this.value = this.value.toUpperCase(); try { this.setSelectionRange(p, p); } catch (e) {} });
 
 			$("#edit-d-pincode").change(function(){
 				do_pincode($(this).val());
@@ -1554,8 +1497,9 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 				else
 				{
 					event.preventDefault();
-					if (! donor_change_check())
+					if (DanaDonor.pending())
 					{
+						alert("Donor details are still loading. Please wait a moment and submit again.");
 						$("input[type=submit]").prop("disabled", false);
 						return;
 					}
@@ -1574,120 +1518,245 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	//drupal_add_js(drupal_get_path('module', 'donation').'/draggabilly.pkgd.min.js');
 	//drupal_add_js(drupal_get_path('module', 'donation').'/packery.extra.js');
 	//drupal_add_js(drupal_get_path('module', 'donation').'/jquery.gridster.js');
+	drupal_add_js(array('danaDonor' => array('cur_fy' => donation_cur_fy(), 'today' => donation_db_today(),
+		'freeze' => donation_versioning_freeze_active() ? 1 : 0, 'is_edit' => $is_edit,
+		'orig_donor' => (string) get_default('donor_id', $edit_data, '-1'), 'orig_name' => (string) get_default('d_name', $edit_data, ''),
+		'fycounts' => isset($edit_data['donor_fycounts']) ? $edit_data['donor_fycounts'] : array())), 'setting');
+	drupal_add_css(drupal_get_path('module', 'donation').'/css/jquery-confirm.min.css');
+	drupal_add_js(drupal_get_path('module', 'donation').'/js/jquery-confirm.min.js');
+	drupal_add_js(drupal_get_path('module', 'donation').'/js/donor-versioning.js');
 	drupal_add_css(drupal_get_path('module', 'donation').'/donation.css');
 	drupal_add_js($js, 'inline');
 
 	return $form;
 }
 
+/**
+ * Donation form validate (donor versioning): every check that must happen before any write -- the signed baseline
+ * and four-case rule (M4, L26), FY rollover (M5), FY of the date vs the details shown (L25), and the scope chosen in
+ * the confirm dialog for a past-year donor change (M5, M6).
+ */
+function donation_main_form_validate($form, &$form_state)
+{
+	if (!donation_versioning_require('d_name'))
+		return;
+	$in = $form_state['input'];
+	$date = donation_normalise_ymd(isset($in['d_date']) ? $in['d_date'] : '');
+	if ($date === FALSE)
+	{
+		form_set_error('d_date', t('Transaction Date must be a valid date (YYYY-MM-DD).'));
+		return;
+	}
+	$fy = donation_fy_from_date($date);
+	$cur = donation_cur_fy();
+	$edit = isset($form_state['build_info']['args'][0]) ? $form_state['build_info']['args'][0] : array();
+	$is_edit = !empty($edit['d_id']);
+	$stored = $is_edit ? db_query('SELECT d_donor, d_fy FROM dh_donation WHERE d_id = :id', array(':id' => (int) $edit['d_id']))->fetchAssoc() : FALSE;
+	$case = donor_baseline_case($in, $is_edit, $stored ? (int) $stored['d_donor'] : 0, $stored ? (int) $stored['d_fy'] : 0);
+	if ($case['error'])
+	{
+		form_set_error('d_name', $case['error']);
+		return;
+	}
+	$b = $case['baseline'];
+	$keep = $b ? donor_changed_groups($in, $b['fyv']) : array('name', 'gender', 'contact', 'email', 'id', 'location');
+	// M5: the financial year rolled over while the form was open -> refresh, nothing written
+	if (isset($in['form_cur_fy']) && (int) $in['form_cur_fy'] !== $cur)
+	{
+		donation_form_reload($form_state, t('The financial year changed while this form was open (it is now FY @f). The form has been refreshed; please check the details and submit again.',
+			array('@f' => donation_fy_label($cur))), $keep);
+		return;
+	}
+	// L29 backstop: jQuery UI wrote a donor id into the Name box (the picked donor's or an earlier pick's).
+	// Only a CHANGED name is refused, so a donor whose stored name is digits can still be used.
+	$name = isset($in['d_name']) ? trim($in['d_name']) : '';
+	if ($case['case'] === 'donor' && ctype_digit($name) && in_array('name', $keep, TRUE))
+	{
+		form_set_error('d_name', t('The donor name looks like a donor number. Please pick the donor again.'));
+		return;
+	}
+	$plan = array('case' => $case['case'], 'fy' => $fy, 'cur' => $cur, 'date' => $date, 'groups' => array(), 'scope' => '');
+	if ($case['case'] === 'donor')
+	{
+		// F7 / L25: the details shown were for another FY -> rebuild with this FY's details BEFORE any write
+		if ((int) $b['fy'] !== $fy)
+		{
+			$fys = array('@n' => donation_fy_label($fy), '@o' => donation_fy_label($b['fy']), '@g' => implode(', ', $keep));
+			donation_form_reload($form_state, $keep
+				? t('The transaction date is in FY @n, but the donor details shown were those of FY @o. The form now shows the details recorded for FY @n; your changes to @g were kept. Please check and submit again.', $fys)
+				: t('The transaction date is in FY @n, but the donor details shown were those of FY @o. The form now shows the details recorded for FY @n. Please check and submit again.', $fys), $keep);
+			return;
+		}
+		$groups = $keep;
+		if (in_array('id', $groups, TRUE) && !donor_id_type_allowed(isset($in['d_id_type']) ? $in['d_id_type'] : 0, $b['fyv']))
+			form_set_error('d_id_type', t('Please choose a valid ID type.'));
+		list(, $errs) = donor_form_new_values($in, $b['fyv'], $groups, FALSE);
+		foreach ($errs as $k => $m)
+			form_set_error($k, $m);
+		if ($groups && $fy > 0 && $fy < $cur)
+		{
+			// M5: a past-FY donor change needs an explicit, valid scope from the dialog; the server never guesses
+			$s = isset($in['donor_scope']) ? (string) $in['donor_scope'] : '';
+			$ok = array('current', 'fy');
+			if (donation_versioning_freeze_active())
+				$ok[] = 'live';
+			if (!in_array($s, $ok, TRUE))
+			{
+				form_set_error('d_name', t('Please confirm how the donor changes should be applied (the confirmation dialog). Nothing was saved.'));
+				return;
+			}
+			$plan['scope'] = $s;
+		}
+		$plan['donor'] = (int) $b['donor'];
+		$plan['baseline'] = $b;
+		$plan['groups'] = $groups;
+	}
+	else
+	{
+		// S6: a new donor is stored with the cleaned text (emoji dropped): check what will be stored
+		if (donor_clean_text(isset($in['d_name']) ? $in['d_name'] : '') === '')
+			form_set_error('d_name', t('Donor name is required (emoji cannot be stored).'));
+		if (donor_clean_text(isset($in['d_contact']) ? $in['d_contact'] : '') === '')
+			form_set_error('d_contact', t('Contact number is required (emoji cannot be stored).'));
+	}
+	$form_state['donor_plan'] = $plan;
+}
+
 function donation_main_form_submit($form, &$form_state)
 {
 	global $user, $base_url;
-	foreach ($form_state['input'] as $key => $value) 
-	{
-		if ( substr($key,0,2) == 'd_')
+	$plan = $form_state['donor_plan'];
+	$in = $form_state['input'];
+	$data = array();
+	foreach ($in as $key => $value)
+		if (substr($key, 0, 2) == 'd_')
 			$data[$key] = $value;
-	}
-	$donor['d_name'] = $data['d_name'];
-	$donor['d_id_type'] = $data['d_id_type'];
-	$donor['d_id_no'] = strtoupper($data['d_id_no']);
-	$donor['d_country'] = get_country($data['d_country']);
-	$donor['d_state'] = get_state($data['d_state'], $donor['d_country']);
-	$donor['d_city'] = get_city($data['d_city'], $donor['d_state'], $donor['d_country']);
-	$donor['d_contact'] = $data['d_contact'];
-	$donor['d_address'] = $data['d_address'];
-	$donor['d_pincode'] = $data['d_pincode'];
-	$donor['d_gender'] = $data['d_gender'];
-	$donor['d_email'] = $data['d_email'];
+	foreach (array('d_name', 'd_id_no', 'd_country', 'd_state', 'd_city', 'd_id_type', 'd_contact', 'd_address', 'd_pincode', 'd_email', 'd_gender') as $k)
+		unset($data[$k]);
+	$data['d_date'] = $plan['date'];
+	$data['d_foreign'] = !empty($data['d_foreign']) ? 1 : 0;
+	if (!isset($data['d_chq_date']) || $data['d_chq_date'] == '')
+		unset($data['d_chq_date']);
+	$is_edit = (arg(2) != '');
+	$donation_id = $is_edit ? (int) arg(2) : 0;
+	$past = ($plan['fy'] > 0 && $plan['fy'] < $plan['cur']);
+	$old = NULL;
+	$before = array();
+	$conflicts = array();
 
-	$donor['d_error'] = '';
-	if ($donor['d_country'] == '')
-		$donor['d_error'] = 'No Country '.$data['d_country']."\n";
-	if ($donor['d_state'] == '')
-		$donor['d_error'] .= 'No State '.$data['d_state']."\n";
-	if (($donor['d_city'] == 0) && ($data['d_city'] <> ''))
-		$donor['d_error'] .= 'No City '.$data['d_city']."\n";
-
-
-	if ( $data['d_donor'] == '-1')
+	$txn = db_transaction();
+	try
 	{
-		$donor['d_occupation'] = '';
-		$donor['d_course'] = $data['d_course'];
-		$donor['d_created'] = date('Y-m-d H:i:s');
-		$donor['d_createdby'] = $user->uid;
- 		//New Donor
-		$data['d_donor'] = db_insert('dh_donor')->fields($donor)->execute();
-
-	}
-	else
-	{
-		$donor['d_updated'] = date('Y-m-d H:i:s');
-		$donor['d_updatedby'] = $user->uid;
-		db_update('dh_donor')->fields($donor)->condition('d_id', $data['d_donor'])->execute();
-	}
-	unset($data['d_name']); unset($data['d_id_no']); unset($data['d_country']); unset($data['d_state']);unset($data['d_city']); unset($data['d_id_type']);
-	unset($data['d_contact']); unset($data['d_address']); unset($data['d_pincode']);unset($data['d_email']); unset($data['d_gender']); 
-	//unset($data['d_tax_payer']);
-
-//	$data['d_receipt'] = file_stream_wrapper_get_instance_by_uri('public://')->getDirectoryPath().'/receipts/'.$receipt.'.pdf';
-	$data['d_foreign'] = $data['d_foreign']?1:0;
-	if ( $data['d_chq_date']  == '' )
-		unset( $data['d_chq_date']);
-	$amended = 0;
-	if (arg(2) == '')
-	{
-		$data['d_created'] = date('Y-m-d H:i:s');
-		$data['d_createdBy'] = $user->uid;
-		$donation_id = db_insert('dh_donation')->fields($data)->execute();
-		$action = "created"; 
-	}
-	else
-	{
-		$data['d_lastupdated'] = date('Y-m-d H:i:s');
-		$data['d_updatedBy'] = $user->uid;
-		$donation_id = arg(2);
-		db_update('dh_donation')->fields($data)->condition('d_id', $donation_id)->execute(); 
-		$action = "updated";
-		$amended = 1;
-	}
-
-	//$receipt = variable_get('receipt_prefix', '').str_pad($donation_id, 7, "0", STR_PAD_LEFT);
-
-	$receipt = generate_receipt( $donation_id, $amended );
-	if (isset($form_state['input']['email']) && ($form_state['input']['email']) )
-		send_donor_email( $donation_id );
-
-	if (isset($form_state['input']['whatsapp']) && ($form_state['input']['whatsapp']) )
-	{
-		$wa_id = whatsapp_360_get_waid($donor['d_contact']);
-		if ($wa_id)
+		if ($plan['case'] === 'donor')
 		{
-			$params_body = array($form_state['input']['d_name'], $form_state['input']['d_currency'].' '.$form_state['input']['d_amount'], date('jS F, Y', strtotime($form_state['input']['d_date'])));
-			$params_header = array(upload_whatsapp_pdf($donation_id));
-			$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body, $receipt );
+			$now = donor_live_dv($plan['donor'], TRUE);            // 1. lock the donor row first (L3)
+			if (!$now)
+				throw new Exception(t('This donor no longer exists. Please pick the donor again.'));
+			$before = donor_fy_printed_map($plan['donor']);
+			$data['d_donor'] = $plan['donor'];
+		}
+		else
+			$data['d_donor'] = donation_insert_donor($in, $user->uid);      // F1: new donor, no versioning rows
+		if ($is_edit)
+			$old = db_query('SELECT * FROM dh_donation WHERE d_id = :id FOR UPDATE', array(':id' => $donation_id))->fetchAssoc();
+		// 2. the donation row BEFORE the donor UPDATE: the freeze trigger then sees this donation's FY
+		//    (needed for scope 'live': that FY must keep the details the clerk saw)
+		if (!$is_edit)
+		{
+			$data['d_created'] = date('Y-m-d H:i:s');
+			$data['d_createdBy'] = $user->uid;
+			$donation_id = (int) db_insert('dh_donation')->fields($data)->execute();      // d_fy set by dh_don_bi_fy
+		}
+		else
+		{
+			$data['d_lastupdated'] = date('Y-m-d H:i:s');
+			$data['d_updatedBy'] = $user->uid;
+			db_update('dh_donation')->fields($data)->condition('d_id', $donation_id)->execute();   // d_fy by dh_don_bu_fy
+		}
+		// 3. donor: only the changed groups, routed by FY and scope (M4)
+		if ($plan['case'] === 'donor' && $plan['groups'])
+		{
+			list($new) = donor_form_new_values($in, $plan['baseline']['fyv'], $plan['groups'], TRUE);
+			$live_groups = (!$past || $plan['scope'] !== 'fy') ? $plan['groups'] : array();
+			$fy_groups = ($past && $plan['scope'] !== 'live') ? $plan['groups'] : array();
+			if ($live_groups)
+			{
+				$w = donor_write_live_groups($plan['donor'], $now, $new, $live_groups, $plan['baseline']['live'], $user->uid);
+				$conflicts = $w['conflicts'];                   // the trigger has frozen every unbridged past FY at OLD
+			}
+			if ($fy_groups)
+			{
+				$eff = donor_effective_dv($plan['donor'], $plan['fy']);
+				$all = donor_groups();
+				foreach ($fy_groups as $g)
+					if (!in_array($g, $conflicts, TRUE) && !donor_dv_equal($eff['dv'], $plan['baseline']['fyv'], $all[$g]))
+						$conflicts[] = $g;                      // that FY's group changed since the form loaded; the clerk's value wins
+				$target = donor_correction_target($eff['dv'], $new, $fy_groups);
+				donor_past_fy_correct($plan['donor'], $plan['fy'], $target, $user->uid, $donation_id, $plan['scope'], $fy_groups);
+			}
+		}
+		// 4. M5: re-read the DB clock (uncached) before COMMIT
+		if (donation_cur_fy(TRUE) !== $plan['cur'])
+		{
+			$txn->rollback();
+			donation_form_reload($form_state, t('The financial year changed while saving (it is now FY @f). Nothing was saved; please check the details and submit again.',
+				array('@f' => donation_fy_label(donation_cur_fy()))), $plan['groups']);
+			return;
 		}
 	}
-
-	if ($donation_id > 0 )
+	catch (Throwable $e)   // PHP 7: also TypeError; never let $txn commit half a submit
 	{
-		drupal_set_message(t("Receipt No $receipt $action successfully"));
-		//send_donor_email( $donation_id );
-		$_SESSION['pdffile'] = $base_url.'/download-receipt/'.$donation_id; //file_create_url($file); 
-		drupal_goto("donation");
-		//drupal_add_js('<script type="text/javascript">	var pdf = window.open("'.$file.'", "_blank", "width=800, height=500, resizable=0");	alert("caleed");
-//</script>', 'inline'); 
-		//drupal_goto("$file");
+		$txn->rollback();
+		watchdog('donation', 'Save rolled back: @m (@f:@l)', array('@m' => $e->getMessage(), '@f' => $e->getFile(), '@l' => $e->getLine()), WATCHDOG_ERROR);   // watchdog_exception() accepts Exception only
+		drupal_set_message(t('The donation could not be saved; nothing was changed. Please try again. (@m)', array('@m' => $e->getMessage())), 'error');
+		$form_state['rebuild'] = TRUE;
+		return;
+	}
+	unset($txn);                                                    // COMMIT. Nothing below holds the donor row lock (I11).
+
+	// 5. receipt: new, or amended only when needed (D22 + M12); the old PDF is archived first (P1)
+	$receipt = $old ? $old['d_receipt_f'] : '';
+	if (!$is_edit || donation_receipt_needs_regen($old, $donation_id, $plan, $before, $in))
+	{
+		$r = generate_receipt($donation_id, $is_edit ? 1 : 0);
+		if ($r === FALSE)
+			drupal_set_message(t('The donation was saved, but its receipt was NOT reprinted because the current PDF could not be archived first. Use "Reprint" on the Donation Report later.'), 'error');
+		elseif ($r)
+			$receipt = $r;
+	}
+	// 6. sending: the donation's YEAR details (U2) -- never the typed values. Code = read-path spec R5c
+	//    (donation_effective_donor($donation_id); send_donor_email(); WhatsApp to $eff['d_contact']).
+	donation_send_after_save($donation_id, $receipt, $in);
+	// 7. messages
+	if ($conflicts)
+		drupal_set_message(donor_conflict_message($plan['donor'], $conflicts, $plan['baseline']['ts']), 'warning');
+	if ($plan['case'] === 'donor' && $plan['groups'])
+		donor_reprint_offer($plan['donor'], $before, $donation_id);
+	if ($donation_id > 0)
+	{
+		drupal_set_message(t('Receipt No @r @a successfully', array('@r' => $receipt, '@a' => $is_edit ? 'updated' : 'created')));
+		$_SESSION['pdffile'] = $base_url . '/download-receipt/' . $donation_id;
+		drupal_goto('donation');
 	}
 	else
-		drupal_set_message(t("Some error occurred, Pls try again."), "error");
+		drupal_set_message(t('Some error occurred, Pls try again.'), 'error');
 }
 
 function generate_receipt( $id, $amended )
 {
 	global $user;
-	$q = "select d.*,don.d_gender,don.d_name,don.d_contact,don.d_address,don.d_country,don.d_state, it.it_name, don.d_id_no, don.d_pincode, c.c_city from 
-		dh_donation d left join dh_donor don on d.d_donor=don.d_id left join dh_id_types it on (don.d_id_type=it.it_code) left join dh_city c on don.d_city=c.c_id where d.d_id='$id'";
-	$handle = db_query($q);
+	// R4 (donor versioning): the donor details of the donation's financial year (snapshot), else the current details.
+	// State/country print as codes, so a frozen address prints entirely as it was in that year.
+	$q = "SELECT d.*,
+		COALESCE(dv.dv_gender, don.d_gender) AS d_gender, COALESCE(dv.dv_name, don.d_name) AS d_name,
+		COALESCE(dv.dv_contact, don.d_contact) AS d_contact, COALESCE(dv.dv_address, don.d_address) AS d_address,
+		COALESCE(dv.dv_country_code, don.d_country) AS d_country, COALESCE(dv.dv_state_code, don.d_state) AS d_state,
+		COALESCE(dv.dv_id_type_name, it.it_name) AS it_name, COALESCE(dv.dv_id_no, don.d_id_no) AS d_id_no,
+		COALESCE(dv.dv_pincode, don.d_pincode) AS d_pincode, COALESCE(dv.dv_city, c.c_city) AS c_city
+		FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id" . donation_donor_fy_join('d') . "
+		LEFT JOIN dh_id_types it ON (don.d_id_type = it.it_code) LEFT JOIN dh_city c ON don.d_city = c.c_id
+		WHERE d.d_id = :id";
+	$handle = db_query($q, array(':id' => (int) $id));
 	if ($handle->rowCount() <=0 )
 		return;
 	$row = $handle->fetchAssoc();
@@ -1773,6 +1842,11 @@ function generate_receipt( $id, $amended )
 	//}
 	//$outuri = 'private://'.'receipts/'.variable_get('receipt_prefix', '').str_pad($id, 7, "0", STR_PAD_LEFT).'.pdf';
 	$outuri = str_replace('/dhamma/web/files/dana/' ,'', $outfile);
+	// P1: keep the PDF that is about to be overwritten (S3 bucket versioning is off). On an amend a failed
+	// archive stops here, before anything is written.
+	$key = str_replace('private://', '', $outuri);
+	if (!donation_receipt_archive($id, array($key, str_replace('.pdf', '-email.pdf', $key)), (bool) $amended))
+		return FALSE;
 	db_update('dh_donation')->fields(array('d_receipt' => $outuri, 'd_receipt_email' => str_replace(".pdf", "-email.pdf", $outuri) , 'd_receipt_num' => $receipt_num, 'd_receipt_f' => variable_get('receipt_prefix', '').str_pad($receipt_num, 7, "0", STR_PAD_LEFT)))->condition('d_id', $id)->execute();
 	$search = array();
 	$replace = array();
@@ -1838,19 +1912,19 @@ function process_mail_queue()
 
 function send_donor_email( $id )
 {
-	$q = "select d.*,don.d_gender,don.d_name, don.d_email, DATE_FORMAT(d_date, '%D %M, %Y') as 'd_date_c' from 
-	dh_donation d left join dh_donor don on d.d_donor=don.d_id where d.d_id='$id'";
-	$handle = db_query($q);
-	if ($handle->rowCount() <=0 )
+	// R5 (donor versioning): name and email address of the donation's financial year (U2).
+	if (!donation_versioning_require(NULL, 'read'))
+		return array('success' => False, 'msg' => 'Donor versioning is not completely installed on this site', 'to' => '');
+	$row = donation_effective_donor($id);
+	if (!$row)
 	{
 		drupal_set_message(t("Could not find donation id $id") );
-		return array('success' => False, 'msg' => "Could not find donation id $id");
+		return array('success' => False, 'msg' => "Could not find donation id $id", 'to' => '');
 	}
-	$row = $handle->fetchAssoc();
 	if ( $row['d_email'] == "")
 	{
 		drupal_set_message(t("No email address to send e-Receipt") );
-		return array('success' => False, 'msg' =>"No email address to send e-Receipt" );		
+		return array('success' => False, 'msg' =>"No email address to send e-Receipt", 'to' => '' );		
 	}
 
 	$replace = array('[donor-name]' => $row['d_name'], '[currency]' => $row['d_currency'], '[receipt-date]' => $row['d_date_c'], '[amount]' => $row['d_amount'], '[centre-from-name]' => variable_get('donation_from', ''), '[donation-id]' => $row['d_receipt_f']);
@@ -1886,7 +1960,7 @@ function send_donor_email( $id )
 	$res = $mg->messages()->send(get_mailgun_domain($from), $options );
 	$mid = $res->getId();
 	watchdog('DanaSendEmail', "Email sent to ".$row['d_email']." (".$mid.")");
-	return array('success' => True, 'msg' => $mid);
+	return array('success' => True, 'msg' => $mid, 'to' => $to);
 }
 
 
@@ -1985,29 +2059,25 @@ function send_whatsapp_generic( $contact, $template, $params_body, $file = null,
 
 function get_country($name)
 {
-   $q = "select c_code from dh_country where c_name='$name' limit 1";
-   $country_code = db_query($q)->fetchField();
-   return $country_code;
+	return (string) db_query('SELECT c_code FROM dh_country WHERE c_name = :n ORDER BY c_id LIMIT 1', array(':n' => trim((string) $name)))->fetchField();
 }
 
 function get_state($name, $country)
 {
-   $q = "select s_code from dh_state where s_country='$country' and s_name='$name' limit 1";
-   $state_code = db_query($q)->fetchField();
-   return $state_code;
+	return (string) db_query('SELECT s_code FROM dh_state WHERE s_country = :c AND s_name = :n ORDER BY s_id LIMIT 1',
+		array(':c' => (string) $country, ':n' => trim((string) $name)))->fetchField();
 }
 
-
-function get_city( $name, $state, $country )
+function get_city($name, $state, $country)
 {
-   $name = str_ireplace('navi', 'new', $name);
-   $q = "select c_id from dh_city where c_country='$country' and c_state='$state' and c_city='$name' limit 1";
-   $city_id = db_query($q)->fetchField();
-   if ($city_id == '')
-   {
-   	  $city_id = db_insert('dh_city')->fields(array('c_country' => $country, 'c_state' => $state, 'c_city' => $name))->execute();
-   }
-   return $city_id;
+	$name = trim(str_ireplace('navi', 'new', (string) $name));
+	if ($name === '' || (string) $state === '' || (string) $country === '')
+		return 0;
+	$id = db_query('SELECT c_id FROM dh_city WHERE c_country = :co AND c_state = :s AND c_city = :n ORDER BY c_id LIMIT 1',
+		array(':co' => (string) $country, ':s' => (string) $state, ':n' => $name))->fetchField();
+	if (!$id)
+		$id = db_insert('dh_city')->fields(array('c_country' => (string) $country, 'c_state' => (string) $state, 'c_city' => $name))->execute();
+	return (int) $id;
 }
 
 
@@ -2301,125 +2371,43 @@ function donation_report_form($form, &$form_state)
      $deleted = $data['deleted'];
      $with_logs = $data['with_logs'];
 		
-		$q = "select '' as 'Tags', d.d_synced_date as 'Synced_Date', CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) as 'Action 1',CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted, '||', d_update_count) as 'Action 2', d_receipt_email as 'Action 3', d.d_date as 'Txn Date', c.c_type as 'Course', CONCAT(don.d_name,'||',IFNULL(don.d_address_proof,'')) as 'Name', don.d_address as 'Address', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category',
-			CONCAT(d.d_id,'||',d.d_receipt_f,'||',d.d_receipt) as 'Receipt No', 
-			don.d_id_no as 'Passport/ID No', don.d_email as 'Email',
-			 $txn_types_qry
-			/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
-			IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' or d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',
-			*/
-			d.d_ref_no as 'Ref No', d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  d.d_comment as 'Comment',
-			u.name as 'CreatedBy', d.d_created as 'Created On', CONCAT(ud.name, '||', d.d_deleted_date) as 'Extra'  
-			from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
-			left join dh_course c on d.d_course=c.c_id
-			left join users ud on d.d_deleted_by=ud.uid
-      left join dh_donation_tag dt on d.d_id=dt.dt_donation
-			where d.d_id >0 ".$append ;
-			//where d.d_deleted=0 ".$append ;
+		// R6 (donor versioning): donor columns are those of each donation's financial year (snapshot, else current),
+		// including Mobile and Email (what a resend uses, U2). All filters are bound (donation_report_where).
+		if (!donation_versioning_require(NULL, 'read'))
+			return $form;
+		$wdata = array('from' => $from, 'to' => $to, 'foreign' => $foreign, 'category' => $category, 'id_type' => $id_type,
+			'txn_type' => $txn_type, 'don_tags' => $don_tags, 'course' => $course, 'receipt' => $receipt, 'name' => $donor,
+			'user' => $r_user, 'min_amount' => $min_amount, 'max_amount' => $max_amount, 'photo_id' => $photo_id,
+			'synced' => $synced, 'not_synced' => $not_synced, 'deleted' => $deleted, 'with_logs' => $with_logs);
+		$args = array();
+		$q = "SELECT '' AS 'Tags', d.d_synced_date AS 'Synced_Date', CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted) AS 'Action 1',
+			CONCAT(d.d_id,'||',d.d_synced,'||',d.d_deleted,'||',d.d_update_count) AS 'Action 2', d.d_receipt_email AS 'Action 3',
+			d.d_date AS 'Txn Date', c.c_type AS 'Course',
+			CONCAT(COALESCE(dv.dv_name, don.d_name), '||', IFNULL(COALESCE(dv.dv_address_proof, don.d_address_proof), ''),
+				'||', IF(dv.dv_id IS NULL, '', d.d_fy)) AS 'Name',
+			COALESCE(dv.dv_address, don.d_address) AS 'Address', COALESCE(dv.dv_contact, don.d_contact) AS 'Mobile',
+			d.d_type AS 'Txn Type', d.d_category AS 'Category',
+			CONCAT(d.d_id,'||',d.d_receipt_f,'||',d.d_receipt) AS 'Receipt No',
+			COALESCE(dv.dv_id_no, don.d_id_no) AS 'Passport/ID No', COALESCE(dv.dv_email, don.d_email) AS 'Email',
+			$txn_types_qry
+			d.d_ref_no AS 'Ref No', d.d_currency AS 'Currency', IF(d.d_foreign,'Yes','') AS 'Foreign', d.d_comment AS 'Comment',
+			u.name AS 'CreatedBy', d.d_created AS 'Created On', CONCAT(ud.name, '||', d.d_deleted_date) AS 'Extra'
+			FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id" . donation_donor_fy_join('d') . "
+			LEFT JOIN users u ON d.d_createdBy = u.uid LEFT JOIN dh_course c ON d.d_course = c.c_id
+			LEFT JOIN users ud ON d.d_deleted_by = ud.uid LEFT JOIN dh_donation_tag dt ON d.d_id = dt.dt_donation
+			WHERE d.d_id > 0" . donation_report_where($wdata, TRUE, 'num_or_f', $args) . "
+			ORDER BY d.d_date DESC, d.d_receipt_f DESC";
+		$result = db_query($q, $args);
 
-    if($with_logs == 1)
-      $q .= " and d.d_update_count > 0 ";
-
-    if($synced == 1)
-      $q .= " and d.d_synced = 1 ";
-
-    if($not_synced == 1)
-      $q .= " and d.d_synced = 0 ";
-
-    if($deleted == 1)
-      $q .= " and d.d_deleted = 1 ";
-
-    if($min_amount <> '')
-      $q .= " and d.d_amount >= $min_amount ";
-
-    if($max_amount <> '')
-      $q .= " and d.d_amount <= $max_amount ";
-
-    if($photo_id <> '')
-      $q .= " and don.d_id_no = '$photo_id' ";
-
-
-		if (($from <> '') )  // &&  (($course == 0) || ($course == '')) ) 
-			$q .= " and d.d_date >= '$from' ";
-		if (($to <> '') ) //  && (($course == 0) || ($course == '') ) )
-			$q .= " and d.d_date <= '$to' ";
-
-		switch ($foreign) 
-		{
-			case 'local':
-				$q .= " and d.d_foreign=0 ";
-				break;	
-			case 'foreign':
-				$q .= " and d.d_foreign=1 ";
-				break;	
-		}
-
-
-		if ($category <> 'all')
-			$q .= " and d.d_category = '$category' ";
-
-    if ($id_type <> 'all')
-      $q .= " and don.d_id_type = '$id_type' ";
-
-    if ($txn_type)
-    {
-      $txn_type_string = "'" . implode ( "', '", $txn_type ) . "'";;
-      $q .= " and d.d_type in ($txn_type_string) ";
-    }
-
-    if ($don_tags)
-    {
-      $don_tags_string = "'" . implode ( "', '", $don_tags ) . "'";;
-      $q .= " and dt.dt_tag in ($don_tags_string) ";
-    }
-
-		// if ($txn_type <> 'all')
-		// 	$q .= " and d.d_type = '$txn_type' ";
-
-		if ($course <> '')
-			$q .= " and d.d_course = '$course' ";
-
-		if ($receipt <> '')
-		{
-			if (is_numeric($receipt))
-				$q .= " and d.d_receipt_num = '$receipt' ";
-			else
-				$q .= " and d.d_receipt_f = '$receipt' ";
-		}
-		
-		if ($donor <> '')
-			$q .= " and don.d_name = '$donor' ";
-
-
-		if ($r_user <> '')
-			$q .= " and d.d_createdBy = '$r_user' ";
-
-
-		$q .= " order by  d_date DESC, d_receipt_f DESC";
-
-
-		$result = db_query($q);
-		//drupal_set_message($q);
-
-        $q_typewise = "select
-            d_id_type as 'ID-Type-Code',
-            it_name as 'ID-Type-Name',
-            d_foreign as 'Foreign',
-            SUM(d.d_amount) as 'Amount-Sum'
-            from dh_donation d
-            left join dh_donor don on d.d_donor=don.d_id
-            left join dh_id_types it on it.it_code=don.d_id_type
-            where
-            d.d_deleted=0 $append";
-
-        if (($from <> '') )
-            $q_typewise .= " and d.d_date >= '$from' ";
-        if (($to <> '') )
-            $q_typewise .= " and d.d_date <= '$to' ";
-
-        $q_typewise .= " group by d_id_type, d_foreign";
-
-        $result_typewise = db_query($q_typewise);
+		// R7: totals grouped by the effective ID type (date range and own-donations restriction only, as before)
+		$targs = array();
+		$q_typewise = "SELECT COALESCE(dv.dv_id_type, don.d_id_type) AS 'ID-Type-Code', it.it_name AS 'ID-Type-Name',
+			d.d_foreign AS 'Foreign', SUM(d.d_amount) AS 'Amount-Sum'
+			FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id" . donation_donor_fy_join('d') . "
+			LEFT JOIN dh_id_types it ON it.it_code = COALESCE(dv.dv_id_type, don.d_id_type)
+			WHERE d.d_deleted = '0'" . donation_report_where(array('from' => $from, 'to' => $to, 'category' => 'all', 'id_type' => 'all'), TRUE, 'num_or_f', $targs) . "
+			GROUP BY COALESCE(dv.dv_id_type, don.d_id_type), d.d_foreign";
+		$result_typewise = db_query($q_typewise, $targs);
 
 		if ($result->rowCount() <= 0)
 			$form['out'] = array('#markup' => '<div class="report-status"><h2>'.t('No transactions found').'!</h2></div>', '#weight' => 100);
@@ -2495,6 +2483,9 @@ function donation_report_form($form, &$form_state)
 					{
 						$row['Action 3'] = l("Email", "/send-email/".$temp[0], array('attributes' => array('class' => array('send-email'), 'action-type' => 'email', 'did' => $temp[0] )) );
 						$row['Action 3'] .= "\n".l("Whatsapp", "/send-whatsapp/".$temp[0], array('attributes' => array('class' => array('send-whatsapp' ), 'action-type' => 'whatsapp', 'did' => $temp[0] )) );
+						// M12: reprint with the donor details of the donation's financial year (old PDF archived first)
+						if (($row['Txn Type'] <> 'razorpay') && donation_reprint_access())
+							$row['Action 3'] .= "\n".l(t('Reprint'), 'donation/reprint/'.$temp[0]);
 					}
 					if (isset($temp[3]) && ($temp[3] > 0) )
 					{
@@ -2511,6 +2502,10 @@ function donation_report_form($form, &$form_state)
 				}
 				else
 					$row['Name'] = trim($temp[0]);
+				// L28: the donation's financial year uses its own donor details (snapshot)
+				if (isset($temp[2]) && $temp[2] !== '')
+					$row['Name'] = array('data' => $row['Name'], 'class' => array('fy-own'),
+						'title' => t('FY @f uses its own donor details', array('@f' => donation_fy_label((int) $temp[2]))));
 
 				/*$temp = explode("||", $row['Last Name']);
 				if ( isset($temp[1]) && ($temp[1] <> '') )
@@ -2722,9 +2717,9 @@ function donation_report_form($form, &$form_state)
 				$.ajax({url: "/send-"+type+"/"+did, dataType: "json", 
 					success: function(data) {
 						if (data.success)
-							alert("Message successfully sent");
+							alert("Message successfully sent" + (data.to ? " to " + data.to : ""));
 						else
-							alert("Send Failed: "+data.msg);
+							alert("Send Failed" + (data.to ? " (to " + data.to + ")" : "") + ": "+data.msg);
 						dom_a.html(old);
 						return false;
 					}
@@ -3094,95 +3089,34 @@ function download_donor_master($params)
 {
 	global $user;
 	require_once(drupal_get_path('module','donation')."/Classes/PHPExcel.php");	
-	$append = "";
-	if (user_access('access own donation') && (!user_access('administer donation')))
-	{
-		$append = " and d.d_createdBy='".$user->uid."'";
-	}
-	$q = "select don.d_name 'Name', don.d_contact as 'Mobile', don.d_email as 'Email', it.it_name as 'ID Type', 
-		 don.d_id_no as 'ID No'
-		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
-    left join dh_donation_tag dt on d.d_id=dt.dt_donation
-		left join dh_id_types it on (don.d_id_type=it.it_code)
-		where d.d_id >0  and d.d_deleted = 0 ".$append ;
-		//where d.d_deleted=0 ".$append ;
-
-  if($params['with_logs'] == 1)
-    $q .= " and d.d_update_count > 0 ";
-
-  if($params['synced'] == 1)
-    $q .= " and d.d_synced = 1 ";
-
-  if($params['not_synced'] == 1)
-    $q .= " and d.d_synced = 0 ";
-
-  if($params['deleted'] == 1)
-    $q .= " and d.d_deleted = 1 ";
-
-
-  if($params['min_amount'] <> '')
-    $q .= " and d.d_amount >= {$params['min_amount']} ";
-
-  if($params['max_amount'] <> '')
-    $q .= " and d.d_amount <= {$params['max_amount']} ";
-
-  if($params['photo_id'] <> '')
-    $q .= " and don.d_id_no = {$params['photo_id']} ";
-
-	if (($params['from'] <> '') )  // &&  (($course == 0) || ($course == '')) ) 
-		$q .= " and d.d_date >= '".$params['from']."' ";
-	if (($params['to'] <> '') ) //  && (($course == 0) || ($course == '') ) )
-		$q .= " and d.d_date <= '".$params['to']."' ";
-
-	switch ($params['foreign']) 
-	{
-		case 'local':
-			$q .= " and d.d_foreign=0 ";
-			break;	
-		case 'foreign':
-			$q .= " and d.d_foreign=1 ";
-			break;	
-	}
-
-
-	if ($params['category'] <> 'all')
-		$q .= " and d.d_category = '".$params['category']."' ";
-
-  if ($params['id_type'] <> 'all')
-    $q .= " and don.d_id_type = '".$params['id_type']."' ";
-
-	// if ($params['txn_type'] <> 'all')
-	// 	$q .= " and d.d_type = '".$params['txn_type']."' ";
-
-
-  if ($params['txn_type'])
-  {
-    $txn_type_string = "'" . implode ( "', '", $params['txn_type'] ) . "'";;
-    $q .= " and d.d_type in ($txn_type_string) ";
-  }
-
-  if ($params['don_tags'])
-  {
-    $don_tags_string = "'" . implode ( "', '", $params['don_tags'] ) . "'";;
-    $q .= " and dt.dt_tag in ($don_tags_string) ";
-  }
-
-
-	$q .= " group by d_name, d_contact, d_email, it_name, d_id_no";
+	// F13 (donor versioning): stays LIVE (the current identity, D21), now with Donor ID and a per-row Check, and a
+	// signed first line so the upload can refuse another centre's file (M7). Filters are bound (donation_report_where).
+	$args = array();
+	$q = "SELECT DISTINCT don.d_id AS 'Donor ID', don.d_name AS 'Name', don.d_contact AS 'Mobile', don.d_email AS 'Email',
+		don.d_id_type AS 'it_code', it.it_name AS 'ID Type', don.d_id_no AS 'ID No'
+		FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id LEFT JOIN users u ON d.d_createdBy = u.uid
+		LEFT JOIN dh_donation_tag dt ON d.d_id = dt.dt_donation
+		LEFT JOIN dh_id_types it ON (don.d_id_type = it.it_code)
+		WHERE d.d_id > 0 AND d.d_deleted = '0' AND don.d_id IS NOT NULL" . donation_report_where($params, FALSE, 'num_or_f', $args) . "
+		ORDER BY don.d_name, don.d_id";
 
 	$data = array();
-	$result = db_query($q);
+	$result = db_query($q, $args);
 	if ($result->rowCount() > 0)
 	{
 		$tmpfname = tempnam(sys_get_temp_dir(), 'don-mas');
 		$fp = fopen($tmpfname, 'w');
-		fputcsv($fp, array('Full Name', 'Contact', 'Email', 'ID Type', 'ID No'));
+		$site = donation_site_key();
+		$exported = donation_db_now();
+		fputcsv($fp, array('#Dana Donor Master', 'site=' . $site, 'exported=' . $exported, 'sig=' . donor_master_sig($site, $exported)));
+		fputcsv($fp, array('Full Name', 'Contact', 'Email', 'ID Type', 'ID No', 'Donor ID', 'Check'));
 		$total_recs = $result->rowCount();
 		while ( $row = $result->fetchAssoc() ) 
 		{
-			if (!$row['ID Type'])
-				$row['ID Type'] = 'PAN';
-			fputcsv($fp, array_values($row));
+			// L20: an unknown type is exported as UNKNOWN(n) and 0/'' as No ID (never "PAN")
+			fputcsv($fp, array($row['Name'], $row['Mobile'], $row['Email'],
+				donor_master_type_label($row['it_code'], $row['ID Type'], $row['ID No']), $row['ID No'], $row['Donor ID'],
+				donor_master_row_check($row['Donor ID'], $row['it_code'], $row['ID No'])));
 		}
 		fclose($fp);
 		header('Content-type: text/csv');
@@ -3240,106 +3174,37 @@ function donation_report_xls()
         $txn_types_qry .= "IF(d.d_type='".trim($t[0])."',d.d_amount,'') as '".trim($t[1])."', ";
 	}
 
-	global $user;
-	$append = "";
-	if (user_access('access own donation') && (!user_access('administer donation')))
+	// R8 (donor versioning): same columns and order as before; donor columns are those of each donation's
+	// financial year (snapshot, else current). All filters are bound (donation_report_where).
+	if (!donation_versioning_require(NULL, 'read'))
 	{
-		$append = " and d.d_createdBy='".$user->uid."'";
+		drupal_goto('donation-report');
+		return;
 	}
-
-	$q = "select d.d_date as 'Txn Date', c.c_type as 'Course', don.d_name as 'Full Name', don.d_address as 'Address', ci.c_city as 'City', st.s_name as 'State', don.d_pincode as 'Pin', cy.c_name as 'Country', don.d_contact as 'Mobile', d.d_type as 'Txn Type', d.d_category as 'Category', 
-		d.d_receipt_f as 'Receipt No', 
-        dit.it_name as 'ID Type',
-		don.d_id_no as 'Passport/ID',  
+	$wdata = array('from' => $start, 'to' => $end, 'foreign' => $foreign, 'category' => $category, 'id_type' => $id_type,
+		'txn_type' => $txn_type, 'don_tags' => $don_tags, 'course' => $course, 'receipt' => $receipt, 'name' => $donor,
+		'user' => $r_user, 'min_amount' => $min_amount, 'max_amount' => $max_amount, 'photo_id' => $photo_id,
+		'synced' => $synced, 'not_synced' => $not_synced, 'deleted' => $deleted, 'with_logs' => $with_logs);
+	$args = array();
+	$q = "SELECT d.d_date AS 'Txn Date', c.c_type AS 'Course',
+		COALESCE(dv.dv_name, don.d_name) AS 'Full Name', COALESCE(dv.dv_address, don.d_address) AS 'Address',
+		COALESCE(dv.dv_city, ci.c_city) AS 'City', COALESCE(dv.dv_state, st.s_name) AS 'State',
+		COALESCE(dv.dv_pincode, don.d_pincode) AS 'Pin', COALESCE(dv.dv_country, cy.c_name) AS 'Country',
+		COALESCE(dv.dv_contact, don.d_contact) AS 'Mobile', d.d_type AS 'Txn Type', d.d_category AS 'Category',
+		d.d_receipt_f AS 'Receipt No', COALESCE(dv.dv_id_type_name, dit.it_name) AS 'ID Type',
+		COALESCE(dv.dv_id_no, don.d_id_no) AS 'Passport/ID',
 		$txn_types_qry
-		/*IF(d.d_type='cash',d.d_amount,'') as 'Cash', IF(d.d_type='cheque',d.d_amount,'') as 'Cheque', 
-		IF(d.d_type='card',d.d_amount,'') as 'Card',IF(d.d_type='bank-transfer' OR d.d_type='rtgs',d.d_amount,'') as 'Bank Transfer',*/
-		IF(d.d_ref_no <> '',CONCAT(' ',d.d_ref_no), '' ) as 'Ref No', d.d_currency as 'Currency', if(d.d_foreign,'Yes','') as 'Foreign',  
-		d.d_comment as 'Comment',
-		don.d_email as 'Email',
-		u.name as 'CreatedBy'  , d.d_created as 'Created On' 
-		from dh_donation d left join dh_donor don on d.d_donor=don.d_id left join users u on d.d_createdBy=u.uid  
-		left join dh_city ci on don.d_city=ci.c_id left join dh_state st on (don.d_state=st.s_code AND don.d_country=st.s_country) left join dh_country cy on don.d_country=cy.c_code
-		left join dh_course c on d.d_course=c.c_id 
-    left join dh_donation_tag dt on d.d_id=dt.dt_donation
-    left join dh_id_types dit on dit.it_code=don.d_id_type
-		where  d.d_deleted=0 ".$append ;
+		IF(d.d_ref_no <> '', CONCAT(' ', d.d_ref_no), '') AS 'Ref No', d.d_currency AS 'Currency', IF(d.d_foreign,'Yes','') AS 'Foreign',
+		d.d_comment AS 'Comment', COALESCE(dv.dv_email, don.d_email) AS 'Email', u.name AS 'CreatedBy', d.d_created AS 'Created On'
+		FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id" . donation_donor_fy_join('d') . "
+		LEFT JOIN users u ON d.d_createdBy = u.uid
+		LEFT JOIN dh_city ci ON don.d_city = ci.c_id LEFT JOIN dh_state st ON (don.d_state = st.s_code AND don.d_country = st.s_country)
+		LEFT JOIN dh_country cy ON don.d_country = cy.c_code LEFT JOIN dh_course c ON d.d_course = c.c_id
+		LEFT JOIN dh_donation_tag dt ON d.d_id = dt.dt_donation LEFT JOIN dh_id_types dit ON dit.it_code = don.d_id_type
+		WHERE d.d_deleted = '0'" . donation_report_where($wdata, TRUE, 'id', $args) . "
+		ORDER BY d.d_created DESC";
 
-
-  if($with_logs == 1)
-    $q .= " and d.d_update_count > 0 ";
-
-  if($synced == 1)
-    $q .= " and d.d_synced = 1 ";
-
-  if($not_synced == 1)
-    $q .= " and d.d_synced = 0 ";
-
-  if($deleted == 1)
-    $q .= " and d.d_deleted = 1 ";
-
-
-  if($min_amount <> '')
-    $q .= " and d.d_amount >= $min_amount ";
-
-  if($max_amount <> '')
-    $q .= " and d.d_amount <= $max_amount ";
-
-  if($photo_id <> '')
-    $q .= " and don.d_id_no = '$photo_id' ";
-
-
-	if ( ($start <> ''))   // && ($course == ''))
-		$q .= " and d.d_date >= '$start' ";
-	if ( ($end <> '') )     //&& ($course == ''))
-		$q .= " and d.d_date <= '$end' ";
-
-	switch ($foreign) 
-	{
-		case 'local':
-			$q .= " and d.d_foreign=0 ";
-			break;	
-		case 'foreign':
-			$q .= " and d.d_foreign=1 ";
-			break;	
-	}
-
-
-	if ($category <> 'all')
-		$q .= " and d.d_category = '$category' ";
-
-  if ($id_type <> 'all')
-    $q .= " and don.d_id_type = '$id_type' ";
-
-  if ($txn_type)
-  {
-    $txn_type_string = "'" . implode ( "', '", $txn_type ) . "'";;
-    $q .= " and d.d_type in ($txn_type_string) ";
-  }
-
-  if ($don_tags)
-  {
-    $don_tags_string = "'" . implode ( "', '", $don_tags ) . "'";;
-    $q .= " and dt.dt_tag in ($don_tags_string) ";
-  }
-
-	if ($course <> '')
-		$q .= " and d.d_course = '$course' ";
-
-	if ($receipt <> '')
-		$q .= " and d.d_id = '$receipt' ";
-	
-	if ($donor <> '')
-		$q .= " and don.d_name = '$donor' ";
-
-
-	if ($r_user <> '')
-		$q .= " and d.d_createdBy = '$r_user' ";
-
-
-	$q .= " order by d.d_created DESC";
-
-	$result = db_query($q);
+	$result = db_query($q, $args);
 	//drupal_set_message($q);
 
 	$xls = new PHPExcel();
@@ -3568,6 +3433,8 @@ function donation_upload_form_submit($form, &$form_state)
 
 function process_csv( $csv )
 {
+	if (!donation_versioning_ready())   // the import updates dh_donor (same guard as process_donor_csv)
+		return t('Donor versioning is not completely installed on this site; nothing was uploaded.');
 	$buffer = 100;
 	$processed = 0;
 	$row = 0;
@@ -3588,7 +3455,8 @@ function process_csv( $csv )
 				continue;
 			$courses[$data[0]."||".$data[1]] = $data[2];
 			$students[] = array( 'course' => $data[0]."||".$data[1], 'n' => $data[3], 'g' => $data[4], 'a' => $data[5], 'p' => $data[6], 'c' => $data[7], 
-				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12], 'it' => $it_types[ strtolower($data[13]) ] );
+				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12],
+				'it' => isset($it_types[ strtolower($data[13]) ]) ? $it_types[ strtolower($data[13]) ] : NULL );   // unknown ID type: never written (D9)
 			if (($row % $buffer) == 0)
 			{
 				$processed += process_csv_array( $courses, $students );
@@ -3633,43 +3501,69 @@ function process_csv_array($courses, $students)
 			$course_ids[$k] = $cid;
 		}
 	}
+	// Donor versioning (F12): delta writes only; a blank/unknown CSV ID never erases a stored ID (D9);
+	// occupation is no longer blanked; re-attendance updates d_course (the trigger freezes past years, U1).
 	foreach( $students as $donor )
 	{
-		$name = addslashes($donor['n']);
-		$email = addslashes($donor['e']);
-		$contact = addslashes($donor['c']);
-		$country = addslashes($donor['co']);
-		$state = addslashes($donor['st']);
 		$cid = $course_ids[$donor['course']];
-		$q = "select d_id from dh_donor where d_name='$name' and d_email='$email' and d_contact='$contact' and d_deleted=0";
-		$check_id = db_query($q)->fetchField();
-		$d = array();
-		$d['d_name'] =  mb_convert_encoding($donor['n'], "UTF-8");
-		$d['d_gender'] = $donor['g'];
-		$d['d_address'] = mb_convert_encoding($donor['a'], "UTF-8");
-		$d['d_pincode'] = $donor['p'];
-		$d['d_contact'] = $donor['c'];
-		$d['d_email'] = $donor['e'];
-		$d['d_country'] = get_country($country);
-		$d['d_state'] = get_state($state, $d['d_country']);
-		$d['d_city'] = get_city($donor['ci'], $d['d_state'], $d['d_country']);
-		$d['d_course'] = $cid;
-		$d['d_id_type'] = $donor['it'];
-		$d['d_id_no'] = $donor['i'];
-		$d['d_occupation'] = '';
+		$check_id = db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_email = :e AND d_contact = :c AND d_deleted = 0',
+			array(':n' => $donor['n'], ':e' => $donor['e'], ':c' => $donor['c']))->fetchField();
+		$co = get_country($donor['co']);
+		$st = get_state($donor['st'], $co);
 		if ($check_id)
 		{
 			if ($cid)
 			{
-				$d['d_updated'] = date('Y-m-d H:i:s');
-				$d['d_updatedby'] = $user->uid;
-				db_update('dh_donor')->fields($d)->condition('d_id', $check_id)->execute();
+				$txn = db_transaction();             // one short single-donor transaction per row (L3/L4)
+				try
+				{
+					$old = db_query('SELECT * FROM dh_donor WHERE d_id = :d FOR UPDATE', array(':d' => (int) $check_id))->fetchAssoc();
+					$d = array('d_name' => mb_convert_encoding($donor['n'], 'UTF-8'), 'd_gender' => $donor['g'],
+						'd_address' => mb_convert_encoding($donor['a'], 'UTF-8'), 'd_pincode' => $donor['p'], 'd_contact' => $donor['c'],
+						'd_email' => $donor['e'], 'd_course' => (int) $cid);
+					if ($co !== '' && $st !== '')
+					{
+						$old_city = (string) db_query('SELECT c_city FROM dh_city WHERE c_id = :i', array(':i' => (int) $old['d_city']))->fetchField();
+						$same_place = ($co === (string) $old['d_country'] && $st === (string) $old['d_state']
+							&& drupal_strtolower(trim($donor['ci'])) === drupal_strtolower(trim($old_city)));
+						$d['d_country'] = $co;
+						$d['d_state'] = $st;
+						$d['d_city'] = $same_place ? (int) $old['d_city'] : get_city($donor['ci'], $st, $co);
+					}
+					// D9: a blank / unknown CSV ID never erases the stored ID; case/space-only differences are no-ops (L18)
+					if ($donor['it'] !== NULL && trim($donor['i']) !== ''
+						&& donor_id_key($donor['it'], $donor['i'], TRUE) !== donor_id_key($old['d_id_type'], $old['d_id_no'], TRUE))
+					{
+						$d['d_id_type'] = (int) $donor['it'];
+						$d['d_id_no'] = donor_id_canonical($donor['i']);
+					}
+					// d_occupation is not in the CSV and is no longer blanked (HEAD :3659)
+					$f = array();
+					foreach ($d as $k => $val)
+						if ((string) $val !== (string) $old[$k])
+							$f[$k] = $val;
+					if ($f)
+					{
+						$f['d_updatedby'] = (int) $user->uid;
+						db_update('dh_donor')->fields($f)->expression('d_updated', 'NOW()')->condition('d_id', (int) $check_id)->execute();
+					}
+				}
+				catch (Throwable $e)
+				{
+					$txn->rollback();
+					watchdog('donation', 'Save rolled back: @m (@f:@l)', array('@m' => $e->getMessage(), '@f' => $e->getFile(), '@l' => $e->getLine()), WATCHDOG_ERROR);   // watchdog_exception() accepts Exception only
+				}
+				unset($txn);
 			}
 		}
 		else
 		{
-			$d['d_created'] = date('Y-m-d H:i:s');
-			$d['d_createdby'] = $user->uid;
+			// HEAD :3646-3659 + :3669-3674 (new donor), with the bound lookups
+			$d = array('d_name' => mb_convert_encoding($donor['n'], 'UTF-8'), 'd_gender' => $donor['g'],
+				'd_address' => mb_convert_encoding($donor['a'], 'UTF-8'), 'd_pincode' => $donor['p'], 'd_contact' => $donor['c'],
+				'd_email' => $donor['e'], 'd_country' => $co, 'd_state' => $st, 'd_city' => get_city($donor['ci'], $st, $co),
+				'd_course' => (int) $cid, 'd_id_type' => (int) $donor['it'], 'd_id_no' => donor_id_canonical($donor['i']),
+				'd_occupation' => '', 'd_created' => date('Y-m-d H:i:s'), 'd_createdby' => $user->uid);
 			db_insert('dh_donor')->fields($d)->execute();
 		}
 		$count += 1;
@@ -3680,10 +3574,14 @@ function process_csv_array($courses, $students)
 
 function donation_donor_upload_form($form, &$form_state)
 {
+	// U5(a): in April-May, uploads change the current details only; last year keeps its own details
+	$note = donor_apr_may_note();
+	if ($note !== '')
+		$form['apr_may_note'] = array('#markup' => '<div class="messages warning">' . check_plain($note) . '</div>');
 	$form['upload'] = array(
 	    '#type' => 'file',
 	    '#title' => t('CSV File'),
-	    '#description' => t('Donor Master data in CSV format. Valid ID Types are PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card, No ID'),
+	    '#description' => t('Upload the file downloaded with "Download Donor Master" from this centre. Files without the first signature line are matched by name + contact + email. Valid ID Types are PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card, No ID'),
 	);
 	$form['submit'] = array('#type' => 'submit', '#value' => 'Upload');
 	$form['#attributes']['enctype'] = 'multipart/form-data';
@@ -3719,52 +3617,160 @@ function donation_donor_upload_form_submit($form, &$form_state)
 }
 
 
-function process_donor_csv( $csv )
+function process_donor_csv($csv)
 {
 	global $user;
-	$processed = 0;
-	$row = 0;
-	//drupal_set_message("I am called $csv");
-	if (($handle = fopen($csv, "r")) !== FALSE) 
-	{
-		$q = "select it_name, it_code from dh_id_types";
-		$hand = db_query($q);
-		$it_types = array();
-		while ( $row = $hand->fetchAssoc() )
-			$it_types[strtoupper($row['it_name'])] = $row['it_code']; 
+	if (!donation_versioning_ready())
+		return t('Donor versioning is not completely installed on this site; nothing was uploaded.');
+	if (($h = fopen($csv, 'r')) === FALSE)
+		return t('Unable to open file @f', array('@f' => $csv));
+	$lines = array();
+	while (($r = fgetcsv($h, 2000, ',')) !== FALSE)
+		$lines[] = $r;
+	fclose($h);
+	if (!$lines)
+		return t('The file is empty.');
+	$it_types = array();
+	foreach (db_query('SELECT it_name, it_code FROM dh_id_types') as $r)
+		$it_types[strtoupper(trim($r->it_name))] = (int) $r->it_code;
 
-	    	while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) 
-	    	{
-			$row++;
-			// Ignore first row
-	    		if ($row == 1)
-	    			continue;
-			if (count($data) < 5)
+	$signed = FALSE;
+	if (isset($lines[0][0]) && trim($lines[0][0]) === '#Dana Donor Master')
+	{
+		$meta = array();
+		foreach (array_slice($lines[0], 1) as $cell)
+		{
+			$kv = explode('=', (string) $cell, 2);
+			if (count($kv) == 2)
+				$meta[trim($kv[0])] = trim($kv[1]);
+		}
+		$site = donation_site_key();
+		if (!isset($meta['site']) || $meta['site'] !== $site)
+			return t('Refused: this file was downloaded from @o, not from this centre (@s). Nothing was changed.',
+				array('@o' => isset($meta['site']) ? $meta['site'] : '?', '@s' => $site));
+		if (!isset($meta['exported'], $meta['sig']) || !hash_equals(donor_master_sig($site, $meta['exported']), $meta['sig']))
+			return t('Refused: the first line of the file (its signature) is not valid. Please download the Donor Master again. Nothing was changed.');
+		$signed = TRUE;
+		array_shift($lines);
+	}
+	array_shift($lines);                                           // header row (HEAD :3740 never skipped it: $row was reused)
+
+	$rep = array('updated' => 0, 'unedited' => 0, 'unchanged' => 0, 'updated_ids' => array(), 'kept' => array(), 'conflict' => array(),
+		'unmatched' => array(), 'ambiguous' => array(), 'identity' => array(), 'type' => array(), 'format' => array(), 'failed' => array());
+	$plan = array();
+	$checked = 0;
+	// pass 1: classify every row, no writes
+	foreach ($lines as $n => $d)
+	{
+		if (count($d) < 5 || trim(implode('', $d)) === '')
+			continue;
+		$line = $n + ($signed ? 3 : 2);
+		$name = trim($d[0]);
+		$label = strtoupper(trim($d[3]));
+		$no = donor_id_canonical($d[4]);
+		$tag = $line . ': ' . $name;
+		if ($signed && count($d) >= 7 && ctype_digit(trim($d[5])))
+		{
+			$id = (int) $d[5];
+			$live = db_query('SELECT d_id, d_name FROM dh_donor WHERE d_id = :id AND d_deleted = 0', array(':id' => $id))->fetchAssoc();
+			if (!$live)
+			{
+				$rep['unmatched'][] = $tag;
 				continue;
-			if ( ! in_array(strtoupper($data[3]), array_keys($it_types) ))
+			}
+			$checked++;
+			if (!donor_master_identity_ok($id, $name, $live['d_name']))
+			{
+				$rep['identity'][] = $tag . ' (Donor ID ' . $id . ' is ' . $live['d_name'] . ')';
 				continue;
-			$d = array();
-			$d['d_id_type'] = $it_types[strtoupper($data[3])];
-			$d['d_id_no'] = $data[4];
-			$d['d_updated'] = date('Y-m-d H:i:s');
-			$d['d_updatedby'] = $user->uid;
-			db_update('dh_donor')->fields($d)->condition('d_name', $data[0])->condition('d_contact', $data[1])->condition('d_email', $data[2])->condition('d_deleted', 0)->execute();
-			//$q = "update dh_donor set d_id_type='".$d['d_id_type']."', d_id_no='".$d['d_id_no']."' where d_name='".addslashes($data[0])."' and d_contact='".$data[1]."' and d_email='".addslashes($data[2])."'";
-			//drupal_set_message($q);
-			$processed += 1;
-	    	}
-	    fclose($handle);
-	    //drupal_set_message("$processed records processed");
-	    return "$processed records processed";
-	}	
-	else
-		//drupal_set_message("Unable to open file $csv");
-		return "Unable to open file $csv";
+			}
+		}
+		else
+		{
+			// unsigned (HEAD-format) row: name + contact + email must match exactly one donor (HEAD key, inherently an identity anchor)
+			$ids = db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_contact = :c AND d_email = :e AND d_deleted = 0',
+				array(':n' => $d[0], ':c' => $d[1], ':e' => $d[2]))->fetchCol();
+			if (count($ids) != 1)
+			{
+				$rep[count($ids) ? 'ambiguous' : 'unmatched'][] = $tag;
+				continue;
+			}
+			$id = (int) $ids[0];
+		}
+		$unknown = FALSE;
+		if (preg_match('/^UNKNOWN\s*\((\d+)\)$/', $label, $m))
+		{
+			$type = (int) $m[1];
+			$unknown = TRUE;
+		}
+		elseif (isset($it_types[$label]))
+			$type = $it_types[$label];
+		else
+		{
+			$rep['type'][] = $tag . ' (' . $d[3] . ')';
+			continue;
+		}
+		$check = ($signed && isset($d[6])) ? trim($d[6]) : '';
+		if ($check !== '' && hash_equals(donor_master_row_check($id, $type, $no), $check))
+		{
+			$rep['unedited']++;                                    // not edited since download: never written (L19)
+			continue;
+		}
+		if ($unknown)
+		{
+			$rep['type'][] = $tag . ' (' . $d[3] . ')';
+			continue;
+		}
+		if (!donor_master_id_format_ok($type, $no))
+		{
+			$rep['format'][] = $tag . ' (' . $d[3] . ' ' . $d[4] . ')';
+			continue;
+		}
+		$plan[] = array('tag' => $tag, 'id' => $id, 'type' => $type, 'no' => $no, 'check' => $check);
+	}
+	// M7 + W3: abort the WHOLE file when more than 5% of the Donor-ID rows AND at least 2 rows fail the name check;
+	// a single failing row is only skipped and reported
+	if (count($rep['identity']) >= 2 && count($rep['identity']) * 100 > 5 * max(1, $checked))
+		return t('Refused: @n of @m rows have a Donor ID that belongs to a donor with a different name. Is this the right file? Nothing was changed.',
+			array('@n' => count($rep['identity']), '@m' => $checked)) . '<br>' . check_plain(implode('; ', array_slice($rep['identity'], 0, 20)));
+	// pass 2: one short transaction per row (L3/L4)
+	foreach ($plan as $p)
+	{
+		$txn = db_transaction();
+		try
+		{
+			$now = db_query('SELECT d_id_type, d_id_no FROM dh_donor WHERE d_id = :id FOR UPDATE', array(':id' => $p['id']))->fetchAssoc();
+			if (donor_id_key($now['d_id_type'], $now['d_id_no'], TRUE) === donor_id_key($p['type'], $p['no'], TRUE))
+				$rep['unchanged']++;                               // L18: normalised no-op test
+			elseif ($p['check'] !== '' && !hash_equals(donor_master_row_check($p['id'], $now['d_id_type'], $now['d_id_no']), $p['check']))
+				$rep['conflict'][] = $p['tag'] . ' (now ' . $now['d_id_no'] . ')';      // changed by someone else after the download
+			elseif (donor_id_is_real($now['d_id_type'], $now['d_id_no']) && !donor_id_is_real($p['type'], $p['no']))
+				$rep['kept'][] = $p['tag'];                        // L19: never downgrade a real live ID
+			else
+			{
+				db_update('dh_donor')->fields(array('d_id_type' => $p['type'], 'd_id_no' => $p['no'], 'd_updatedby' => (int) $user->uid))
+					->expression('d_updated', 'NOW()')->condition('d_id', $p['id'])->execute();      // the trigger freezes past FYs
+				$rep['updated']++;
+				$rep['updated_ids'][] = $p['id'];
+			}
+		}
+		catch (Throwable $e)   // PHP 7: also TypeError; never let $txn commit half a submit
+		{
+			$txn->rollback();
+			watchdog('donation', 'Save rolled back: @m (@f:@l)', array('@m' => $e->getMessage(), '@f' => $e->getFile(), '@l' => $e->getLine()), WATCHDOG_ERROR);   // watchdog_exception() accepts Exception only
+			$rep['failed'][] = $p['tag'];
+		}
+		unset($txn);
+	}
+	return donor_master_report($rep);
 }
 
 
 function donation_income_tax_form($form, &$form_state)
 {
+	// R16x (donor versioning): review list of donors whose year details differ from the current record.
+	if (donation_versioning_ready('read'))
+		donation_10bd_review_form_parts($form, $form_state);
 	$years  = array('' => 'Choose');
 	$q = "select DISTINCT(date_format(d_date, '%Y')) as 'year' from dh_donation order by d_date asc";
 	$hand = db_query($q);
@@ -3872,6 +3878,16 @@ function sanitize_10bd( $data )
 
 function generate_10bd( $year, $quarter = '', $month = '' )
 {
+    // HEAD concatenated the raw POSTed year into the SQL: force numbers / known values (R9).
+    $year = (int) $year;
+    $month = (int) $month;
+    if (!in_array($quarter, array('', 'Q1', 'Q2', 'Q3', 'Q4'), TRUE))
+        $quarter = '';
+    if (!donation_versioning_require(NULL, 'read'))
+    {
+        drupal_goto('income-tax-report');
+        return;
+    }
     if (!empty($month)) {
         // Monthly
         $fy_start = $year - 1;
@@ -3917,20 +3933,32 @@ function generate_10bd( $year, $quarter = '', $month = '' )
 
      $id_codes = array(1 => 'Permanent Account Number', 2 => 'Aadhaar Number', 3 => 'Tax Identification Number', 4 => 'Passport number', 5 => "Elector's photo identity number", 6 => 'Driving License number', 7 => 'Ration card number' );
 
-  $q = "select 1 as 'Sl. No.', '' as 'Pre Acknowledgement Number', don.d_id_type as 'ID Code', don.d_id_no as 'Unique Identification Number', 'Section 80G' as 'Section Code', '$urn' as 'Unique Registration Number (URN)', '$urn_date' as 'Date of Issuance of Unique Registration Number', don.d_name as 'Name of donor',
-    CONCAT(IFNULL(don.d_address, ''), ', ', IFNULL(c.c_city, ''), ', ', IFNULL(s.s_name, ''), ', pin - ', IFNULL(don.d_pincode, '')) as 'Address of donor',
+  // R9 (donor versioning): the donor details of each donation's financial year (snapshot, else current).
+  $q = "SELECT 1 AS 'Sl. No.', '' AS 'Pre Acknowledgement Number',
+    COALESCE(dv.dv_id_type, don.d_id_type) AS 'ID Code',
+    COALESCE(dv.dv_id_no, don.d_id_no) AS 'Unique Identification Number',
+    'Section 80G' AS 'Section Code', :urn AS 'Unique Registration Number (URN)',
+    :urn_date AS 'Date of Issuance of Unique Registration Number',
+    COALESCE(dv.dv_name, don.d_name) AS 'Name of donor',
+    CONCAT(IFNULL(COALESCE(dv.dv_address, don.d_address), ''), ', ', IFNULL(COALESCE(dv.dv_city, c.c_city), ''), ', ',
+           IFNULL(COALESCE(dv.dv_state, s.s_name), ''), ', pin - ', IFNULL(COALESCE(dv.dv_pincode, don.d_pincode), '')) AS 'Address of donor',
     d.d_category,
-    ( CASE WHEN d.d_type = 'cash' THEN 'Cash' WHEN d.d_type = 'kind' THEN 'Kind' ELSE 'Electronic modes including account payee cheque/draft' END) as 'Mode of receipt',
-    SUM(d.d_amount) as 'Amount of donation (Indian rupees)'
-    from dh_donation d
-    left join dh_donor don on (d.d_donor=don.d_id)
-    left join dh_city c on (don.d_city=c.c_id)
-    left join dh_state s on (don.d_state=s.s_code and don.d_country=s.s_country)
-    where d_date >= '$start_date' and d_date <= '$end_date' and d_id_type BETWEEN 1 and 7 and d.d_deleted=0 and d_foreign=0 group by don.d_id_no, don.d_id_type, don.d_name,  d.d_category,
-        ( CASE WHEN d.d_type = 'cash' THEN 'cash' WHEN d.d_type = 'kind' THEN 'kind' ELSE 'electronic' END)
-        order by d_name";
+    (CASE WHEN d.d_type = 'cash' THEN 'Cash' WHEN d.d_type = 'kind' THEN 'Kind'
+          ELSE 'Electronic modes including account payee cheque/draft' END) AS 'Mode of receipt',
+    SUM(d.d_amount) AS 'Amount of donation (Indian rupees)'
+    FROM dh_donation d
+    LEFT JOIN dh_donor don ON (d.d_donor = don.d_id)" . donation_donor_fy_join('d') . "
+    LEFT JOIN dh_city c ON (don.d_city = c.c_id)
+    LEFT JOIN dh_state s ON (don.d_state = s.s_code AND don.d_country = s.s_country)
+    WHERE d.d_date >= :start AND d.d_date <= :end
+      AND COALESCE(dv.dv_id_type, don.d_id_type) BETWEEN 1 AND 7
+      AND d.d_deleted = '0' AND d.d_foreign = '0'
+    GROUP BY COALESCE(dv.dv_id_no, don.d_id_no), COALESCE(dv.dv_id_type, don.d_id_type), COALESCE(dv.dv_name, don.d_name), d.d_category,
+      (CASE WHEN d.d_type = 'cash' THEN 'cash' WHEN d.d_type = 'kind' THEN 'kind' ELSE 'electronic' END)
+    ORDER BY COALESCE(dv.dv_name, don.d_name), COALESCE(dv.dv_id_no, don.d_id_no), COALESCE(dv.dv_id_type, don.d_id_type), d.d_category,
+      (CASE WHEN d.d_type = 'cash' THEN 'cash' WHEN d.d_type = 'kind' THEN 'kind' ELSE 'electronic' END)";   // total order: re-downloads are identical
 
-	$result = db_query($q);
+	$result = db_query($q, array(':urn' => (string) $urn, ':urn_date' => (string) $urn_date, ':start' => $start_date, ':end' => $end_date));
 	$header = array('Sl. No.', 'Pre Acknowledgement Number', 'ID Code', 'Unique Identification Number', 'Section Code', 'Unique Registration Number (URN)', 'Date of Issuance of Unique Registration Number', 'Name of donor', 'Address of donor', 'Donation Type', 'Mode of receipt', 'Amount of donation (Indian rupees)');
 	$fname = tempnam(sys_get_temp_dir(), "it10bd");
 	$fp = fopen($fname, "w");
@@ -4110,10 +4138,17 @@ function send_email( $donation_id )
 
 function send_whatsapp( $donation_id )
 {
-	$q = "select d.*,don.d_name,don.d_contact from dh_donation d left join dh_donor don on (d.d_donor=don.d_id) where d.d_id=$donation_id";
-	$row = db_query($q)->fetchAssoc();
-	$wa_id = whatsapp_360_get_waid($row['d_contact']);
-	$ret = array('success' => False, 'msg' => 'Unable to send');
+	// R5b (donor versioning): number and name of the donation's financial year (U2).
+	$ret = array('success' => False, 'msg' => 'Unable to send', 'to' => '');
+	if (!donation_versioning_ready('read'))
+	{
+		$ret['msg'] = 'Donor versioning is not completely installed on this site';
+		drupal_json_output($ret);
+		exit(0);
+	}
+	$row = donation_effective_donor($donation_id);
+	$wa_id = $row ? whatsapp_360_get_waid($row['d_contact']) : '';
+	$ret['to'] = $row ? $row['d_contact'] : '';
 	if ($wa_id)
 	{
 		$params_body = array($row['d_name'], $row['d_currency'].' '.$row['d_amount'], date('jS F, Y', strtotime($row['d_date'])));

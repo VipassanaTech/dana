@@ -85,3 +85,9 @@
     -webkit-border-radius: 15px;
     border-radius: 15px;
 }
+
+/* Donor versioning: which details a financial year uses (L28) */
+.fy-own { border-bottom: 1px dotted #555; cursor: help; }
+.fy-differs { background-color: #fff3cd; }
+.donor-fy-badge { margin: 4px 0 8px; }
+table.donor-fy-summary td.fy-differs { background-color: #fff3cd; }
