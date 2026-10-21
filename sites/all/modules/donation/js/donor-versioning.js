@@ -134,13 +134,24 @@ var DanaDonor = (function ($, C) {
     $.each(S().fycounts || {}, function (fy, c) { fy = +fy; if (fy > 0 && fy < S().cur_fy && fy !== exceptFy) out.push("FY " + C.fyLabel(fy) + ": " + c); });
     return out.join(", ");
   }
+  function differs(k, a, b) {                    // one field; the ID pair as idKey() (0 + no number = 99, number untrimmed)
+    if (k === "d_id_type" || k === "d_id_no") {
+      var x = C.idKey(a.d_id_type, a.d_id_no), y = C.idKey(b.d_id_type, b.d_id_no), i = x.indexOf("|"), j = y.indexOf("|");
+      return (k === "d_id_type") ? x.slice(0, i) !== y.slice(0, j) : x.slice(i + 1) !== y.slice(j + 1);
+    }
+    return C.norm(k, a[k]) !== C.norm(k, b[k]);
+  }
+  /* only the fields that differ: New vs the shown year (bold), and in a past year also New vs the current details
+     (what 'From now on' would change); a group with no single differing field falls back to all its fields */
   function table(b, groups, past) {
     var p = posted(), s = C.display(b.fyv), l = C.display(b.live);
     var h = "<table class=\"donor-changes\"><tr><th>Field</th><th>" + (past ? "FY " + C.fyLabel(b.fy) + " (shown)" : "Before") + "</th><th>New</th>"
       + (past ? "<th>Current details</th>" : "") + "</tr>";
     $.each(groups, function (i, g) {
-      $.each(C.GROUPS[g], function (j, k) {
-        h += "<tr><td>" + C.LABEL[k] + "</td><td>" + esc(shown(k, s[k])) + "</td><td><b>" + esc(shown(k, p[k])) + "</b></td>"
+      var keys = $.grep(C.GROUPS[g], function (k) { return differs(k, p, s) || (past && differs(k, p, l)); });
+      $.each(keys.length ? keys : C.GROUPS[g], function (j, k) {
+        var nv = esc(shown(k, p[k]));
+        h += "<tr><td>" + C.LABEL[k] + "</td><td>" + esc(shown(k, s[k])) + "</td><td>" + (differs(k, p, s) ? "<b>" + nv + "</b>" : nv) + "</td>"
           + (past ? "<td>" + esc(shown(k, l[k])) + "</td>" : "") + "</tr>";
       });
     });
@@ -174,7 +185,7 @@ var DanaDonor = (function ($, C) {
   function currentHtml() {
     var o = others(0);
     return "<p>" + (o ? "Earlier financial years (" + o + ") keep the details they have now. " : "")
-      + "This year's donations (" + n(S().cur_fy) + ") show the new details. Receipts already issued are not changed; after saving you will be offered to reprint them.</p>";
+      + "This year's donations (" + n(S().cur_fy) + ") show the new details. Receipts already issued are not changed and nothing is reprinted automatically; after saving you will get an optional link to reprint them.</p>";
   }
   /* replaces confirm_form() + donor_change_check(): ONE jquery-confirm dialog; the choice goes into the hidden
      donor_scope field INSIDE the donation form (M5; the cancel-dialog pattern), then the form is submitted */

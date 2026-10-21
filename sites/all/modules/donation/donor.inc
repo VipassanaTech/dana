@@ -398,7 +398,7 @@ function donor_form($form, &$form_state, $donor = NULL)
 					});
 					if (keep.length) msg += "These past years keep the details they have now: " + keep.join(", ") + ".\n";
 					if (use.length) msg += "These past years will use the new details: " + use.join(", ") + ".\n";
-					msg += "Receipts of this year show the new details. Receipts already issued are not changed; if any of them now differ, you will be offered to reprint them after saving.\n\nDo you want to continue?";
+					msg += "Receipts of this year show the new details. Receipts already issued are not changed and nothing is reprinted automatically; if any of them now differ, you will get an optional link to reprint them after saving.\n\nDo you want to continue?";
 				}
 				else if (!donor_freeze && changed && donor_don_count > 1)
 					msg = "This donor is linked to " + donor_don_count + " donations. Your changes update the donor details shared by all of them. Existing receipts will NOT be changed.\n\nDo you want to continue?";
