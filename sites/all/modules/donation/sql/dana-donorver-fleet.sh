@@ -20,6 +20,7 @@ SQLDIR=${SQLDIR:-/dhamma/web/apps/dana/sites/all/modules/donation/sql}
 LOGDIR=${LOGDIR:-/var/log/dana-donorver}
 BACKUP_DIR=${BACKUP_DIR:-/root/backups/dana-donorver}
 DB_LIKE=${DB_LIKE:-dana\\_%}
+DB_EXCLUDE=${DB_EXCLUDE:-}                 # comma list of dana_ DBs never touched or checked (e.g. a kept backup copy)
 RETRIES=${RETRIES:-5}
 RETRY_SLEEP=${RETRY_SLEEP:-60}
 LONG_TRX_SECS=${LONG_TRX_SECS:-30}
@@ -49,6 +50,7 @@ list_dbs() {
   local db
   for db in $($MYSQL -N -B -e "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE '$DB_LIKE' ORDER BY 1"); do
     [ -n "$($MYSQL -N -B -e "SHOW TABLES FROM \`$db\` LIKE 'dh_donation'")" ] || continue
+    if [ -n "$DB_EXCLUDE" ]; then case ",$DB_EXCLUDE," in *",$db,"*) continue ;; esac; fi
     if [ -n "$ONLY" ]; then case ",$ONLY," in *",$db,"*) ;; *) continue ;; esac; fi
     echo "$db"
   done

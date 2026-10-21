@@ -12,9 +12,9 @@
 set -u -o pipefail
 MYSQL=${MYSQL:-mysql}
 SQLDIR=${SQLDIR:-/dhamma/web/apps/dana/sites/all/modules/donation/sql}
-FLEET=${FLEET:-/usr/local/sbin/dana-donorver-fleet.sh}
+FLEET=${FLEET:-$(dirname "$(readlink -f "$0")")/dana-donorver-fleet.sh}
 PHASE_FILE=${PHASE_FILE:-/etc/dana-donorver.phase}
-DIPI_LOG=${DIPI_LOG:-/var/log/dipi/dipi-sync.log}          # placeholder: the DIPI sync log path on vri-1
+DIPI_LOG=${DIPI_LOG:-/var/log/donation-cron.log}           # the DIPI sync log on vri-1 (cron.php -> logit)
 DOW=${DOW:-$(date +%u)}                                     # 7 = Sunday
 EXPECT=$(cat "$PHASE_FILE" 2>/dev/null || echo "")
 problems=0; out=""
@@ -38,7 +38,7 @@ fi
 
 # 4. today's DIPI write errors (a failed donor UPDATE inside the freeze shows up here first)
 if [ -r "$DIPI_LOG" ]; then
-  e=$(grep "$(date +%F)" "$DIPI_LOG" | grep -iE 'exec_query|SQLSTATE|ERROR 1[0-9]{3}' | tail -20)
+  e=$(grep "$(date +%F)" "$DIPI_LOG" | grep -iE 'exec_query|SQLSTATE|ERROR 1[0-9]{3}|: \(1[0-9]{3}\) |lock wait/deadlock|FAILED \(course' | tail -20)
   [ -z "$e" ] || { problems=1; say "DIPI errors today:"; say "$e"; }
 fi
 
