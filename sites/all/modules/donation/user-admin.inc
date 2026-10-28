@@ -347,7 +347,7 @@ function ua_edit_page($account)
 	return drupal_get_form('ua_user_form', $account);
 }
 
-/** Add ($account NULL) or edit form. Roles offered: ua_allowed_roles() only. */
+/** Add ($account NULL) or edit form. Exactly one role, from ua_allowed_roles() (decision 2026-10-28: several roles break the app). */
 function ua_user_form($form, &$form_state, $account = NULL)
 {
 	$new = empty($account->uid);
@@ -364,8 +364,14 @@ function ua_user_form($form, &$form_state, $account = NULL)
 	$form['pass'] = array('#type' => 'password_confirm', '#required' => $new, '#after_build' => array('ua_pass_no_autofill'),
 		'#description' => $new ? t('A temporary password. The user must set their own at first login.')
 			: t('Leave blank to keep the current password. A new temporary password must be changed at next login.'));
-	$form['roles'] = array('#type' => 'checkboxes', '#title' => t('Roles'), '#options' => array_map('check_plain', $allowed),
-		'#default_value' => $new ? array() : array_keys(array_intersect_key($account->roles, $allowed)));
+	$current = $new ? array() : array_keys(array_intersect_key($account->roles, $allowed));
+	if (count($current) > 1)
+		$form['several'] = array('#weight' => -10, '#markup' => '<div class="messages warning">'
+			. t('This user has several roles: %r. A user may have only one role: choose the one to keep; saving removes the others.',
+				array('%r' => implode(', ', array_intersect_key($allowed, array_flip($current))))) . '</div>');
+	$form['role'] = array('#type' => 'radios', '#title' => t('Role'), '#required' => TRUE, '#options' => array_map('check_plain', $allowed),
+		'#default_value' => count($current) === 1 ? reset($current) : NULL,
+		'#description' => t('Each user has exactly one role.'));
 	if (!$new)
 		$form['status'] = array('#type' => 'radios', '#title' => t('Status'), '#options' => array(1 => t('Active'), 0 => t('Blocked')),
 			'#default_value' => (int) $account->status);
@@ -393,14 +399,23 @@ function ua_user_form_validate($form, &$form_state)
 		return;
 	}
 	$allowed = ua_allowed_roles();
-	$posted = array_keys(array_filter($v['roles']));
-	if (array_diff($posted, array_keys($allowed)))
+	$role = isset($v['role']) ? $v['role'] : '';
+	$tname = $uid ? (string) user_load($uid)->name : trim($v['name']);
+	if (is_array($role))                                  // a forged request: radios post one value
 	{
-		$tname = $uid ? (string) user_load($uid)->name : trim($v['name']);
-		ua_log('refused', $uid, $tname, array('tried to give a role outside the allowed list'), 'users-pages');
-		form_set_error('roles', t('One of the chosen roles cannot be given here.'));
+		ua_log('refused', $uid, $tname, array('tried to give several roles at once'), 'users-pages');
+		form_set_error('role', t('A user may have only one role.'));
 		return;
 	}
+	if ((string) $role === '')
+		return;                                           // Drupal has already set "Role field is required."
+	if (!isset($allowed[(int) $role]))
+	{
+		ua_log('refused', $uid, $tname, array('tried to give a role outside the allowed list'), 'users-pages');
+		form_set_error('role', t('This role cannot be given here.'));
+		return;
+	}
+	$posted = array((int) $role);
 	$name = trim($v['name']);
 	$err = user_validate_name($name);
 	if ($err)
@@ -428,9 +443,9 @@ function ua_user_form_submit($form, &$form_state)
 	$uid = (int) $form['#ua_uid'];
 	$allowed = ua_allowed_roles();
 	$roles = array(DRUPAL_AUTHENTICATED_RID => 'authenticated user');
-	foreach (array_filter($v['roles']) as $rid)
-		if (isset($allowed[$rid]))
-			$roles[(int) $rid] = $allowed[$rid];
+	$rid = (int) $v['role'];                              // exactly one allowed role; any other allowed role is removed
+	if (isset($allowed[$rid]))
+		$roles[$rid] = $allowed[$rid];
 	$edit = array('name' => trim($v['name']), 'mail' => trim($v['mail']));
 	if ($uid)
 	{
