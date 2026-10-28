@@ -118,9 +118,10 @@ case "$CMD" in
   E2)     FILE=$SQLDIR/E2-park.sql ;;
   R1)     FILE=$SQLDIR/E-R1-rename-back.sql ;;
   UA)     FILE=$SQLDIR/UA-user-admin.sql ;;          # User Admin role + dh_user_log (2026-10-28), safe to re-run
+  STD)    FILE=$SQLDIR/STD-role-perms.sql ;;         # standard rights of the standard roles, add-only, safe to re-run
   preflight) FILE=$SQLDIR/D8-preflight.sql ;;
   D7|D6)  FILE="" ;;
-  *) echo "usage: $0 preflight|B|P1|C|D|D7|D6|smoke|E1|E2|R1|UA [--execute] [--from DB] [--only DB,...]" >&2; exit 2 ;;
+  *) echo "usage: $0 preflight|B|P1|C|D|D7|D6|smoke|E1|E2|R1|UA|STD [--execute] [--from DB] [--only DB,...]" >&2; exit 2 ;;
 esac
 [ -z "$FILE" ] || [ -r "$FILE" ] || die "missing $FILE"
 

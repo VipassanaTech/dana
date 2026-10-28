@@ -29,3 +29,11 @@ User Admin role (2026-10-28) — UA-user-admin.sql
     DELETE FROM role WHERE name = 'User Admin';
     DELETE FROM password_policy_role WHERE rid = 2;   (only if the rules should again cover just Donation Admin/Restricted)
   Keep dh_user_log: it is the audit trail.
+
+Standard rights (2026-10-28) — STD-role-perms.sql
+  The standard donation-app rights of authenticated user, Donation Admin, Donation Restricted, Dhamma Server,
+  Auditor and User Admin. ADD-ONLY (never removes a right), so centre extras and custom roles are kept; safe to re-run.
+  Centres created before a right was added to dana-template.sql miss it; this file fills such gaps.
+  When a new right is added to a standard role: add it to this file, then run it on every site.
+  Run:   DB_EXCLUDE=dana_ahobilam_premerge ./dana-donorver-fleet.sh STD [--only DB]   (dry run), then add --execute
+  New sites: create-dana-domain runs it after the template and UA-user-admin.sql.
