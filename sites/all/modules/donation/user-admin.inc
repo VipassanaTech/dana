@@ -452,3 +452,71 @@ function ua_user_form_submit($form, &$form_state)
 		: t('User %n created. They must set their own password at first login.', array('%n' => $saved->name)));
 	$form_state['redirect'] = 'centre-users';
 }
+
+/* ======================================================================
+ * F. The log page (read-only for everyone)
+ * ====================================================================== */
+
+function ua_log_actions()
+{
+	return array('created' => t('Created'), 'edited' => t('Edited'), 'blocked' => t('Blocked'), 'unblocked' => t('Unblocked'),
+		'roles' => t('Roles changed'), 'password' => t('Password set'), 'password-own' => t('Password changed (own)'),
+		'cancelled' => t('Cancelled'), 'refused' => t('Refused'));
+}
+
+function ua_log_filter_form($form, &$form_state)
+{
+	$form['f'] = array('#type' => 'fieldset', '#title' => t('Filter'), '#attributes' => array('class' => array('container-inline')));
+	foreach (array('user' => t('User'), 'by' => t('Done by')) as $k => $label)
+		$form['f'][$k] = array('#type' => 'textfield', '#title' => $label, '#size' => 15, '#default_value' => isset($_GET[$k]) ? $_GET[$k] : '');
+	$form['f']['action'] = array('#type' => 'select', '#title' => t('Action'), '#options' => array('' => t('- Any -')) + ua_log_actions(),
+		'#default_value' => isset($_GET['action']) ? $_GET['action'] : '');
+	foreach (array('from' => t('From'), 'to' => t('To')) as $k => $label)
+		$form['f'][$k] = array('#type' => 'textfield', '#title' => $label, '#size' => 10, '#attributes' => array('placeholder' => 'YYYY-MM-DD'),
+			'#default_value' => isset($_GET[$k]) ? $_GET[$k] : '');
+	$form['f']['go'] = array('#type' => 'submit', '#value' => t('Filter'));
+	return $form;
+}
+
+function ua_log_filter_form_submit($form, &$form_state)
+{
+	$q = array();
+	foreach (array('user', 'by', 'action', 'from', 'to') as $k)
+		if (trim((string) $form_state['values'][$k]) !== '')
+			$q[$k] = trim((string) $form_state['values'][$k]);
+	$form_state['redirect'] = array('centre-users/log', array('query' => $q));
+}
+
+function ua_log_page()
+{
+	$acts = ua_log_actions();
+	$header = array(
+		array('data' => t('When'), 'field' => 'l.ul_id', 'sort' => 'desc'),
+		array('data' => t('Done by'), 'field' => 'l.ul_actor_name'),
+		array('data' => t('User'), 'field' => 'l.ul_target_name'),
+		array('data' => t('Action'), 'field' => 'l.ul_action'),
+		t('Details'), t('Where'), t('IP'));
+	$q = db_select('dh_user_log', 'l')->extend('PagerDefault')->extend('TableSort');
+	$q->fields('l');
+	if (!empty($_GET['user']))
+		$q->condition('l.ul_target_name', '%' . db_like($_GET['user']) . '%', 'LIKE');
+	if (!empty($_GET['by']))
+		$q->condition('l.ul_actor_name', '%' . db_like($_GET['by']) . '%', 'LIKE');
+	if (!empty($_GET['action']) && isset($acts[$_GET['action']]))
+		$q->condition('l.ul_action', $_GET['action']);
+	if (!empty($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']))
+		$q->condition('l.ul_tstamp', $_GET['from'] . ' 00:00:00', '>=');
+	if (!empty($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))
+		$q->condition('l.ul_tstamp', $_GET['to'] . ' 23:59:59', '<=');
+	$q->limit(50)->orderByHeader($header);
+	$rows = array();
+	foreach ($q->execute() as $r)
+		$rows[] = array(check_plain(date('d/m/Y H:i', strtotime($r->ul_tstamp))), check_plain($r->ul_actor_name), check_plain($r->ul_target_name),
+			isset($acts[$r->ul_action]) ? $acts[$r->ul_action] : check_plain($r->ul_action), check_plain($r->ul_details),
+			check_plain($r->ul_via), check_plain($r->ul_ip));
+	return array(
+		'filter' => drupal_get_form('ua_log_filter_form'),
+		'table' => array('#theme' => 'table', '#header' => $header, '#rows' => $rows, '#empty' => t('No log lines.')),
+		'pager' => array('#theme' => 'pager'),
+	);
+}
