@@ -352,13 +352,16 @@ function ua_user_form($form, &$form_state, $account = NULL)
 {
 	$new = empty($account->uid);
 	$allowed = ua_allowed_roles();
+	if ($new)
+		drupal_set_title(t('Add user'));
 	$form['#ua_uid'] = $new ? 0 : (int) $account->uid;
+	$form['#attributes']['autocomplete'] = 'off';
 	$form['name'] = array('#type' => 'textfield', '#title' => t('Username'), '#maxlength' => USERNAME_MAX_LENGTH, '#required' => TRUE,
-		'#default_value' => $new ? '' : $account->name,
+		'#default_value' => $new ? '' : $account->name, '#attributes' => array('autocomplete' => 'off'),
 		'#description' => $new ? '' : t('The username is the login; after a change the user logs in with the new one.'));
 	$form['mail'] = array('#type' => 'textfield', '#title' => t('Email'), '#maxlength' => EMAIL_MAX_LENGTH, '#required' => TRUE,
-		'#default_value' => $new ? '' : $account->mail);
-	$form['pass'] = array('#type' => 'password_confirm', '#required' => $new,
+		'#default_value' => $new ? '' : $account->mail, '#attributes' => array('autocomplete' => 'off'));
+	$form['pass'] = array('#type' => 'password_confirm', '#required' => $new, '#after_build' => array('ua_pass_no_autofill'),
 		'#description' => $new ? t('A temporary password. The user must set their own at first login.')
 			: t('Leave blank to keep the current password. A new temporary password must be changed at next login.'));
 	$form['roles'] = array('#type' => 'checkboxes', '#title' => t('Roles'), '#options' => array_map('check_plain', $allowed),
@@ -370,6 +373,14 @@ function ua_user_form($form, &$form_state, $account = NULL)
 	$form['actions']['submit'] = array('#type' => 'submit', '#value' => $new ? t('Create user') : t('Save'));
 	$form['actions']['cancel'] = array('#markup' => l(t('Cancel'), 'centre-users'));
 	return $form;
+}
+
+/** #after_build: browsers must not fill a saved password into the temporary-password boxes (a save would change it). */
+function ua_pass_no_autofill($element, &$form_state)
+{
+	foreach (array('pass1', 'pass2') as $k)
+		$element[$k]['#attributes']['autocomplete'] = 'new-password';
+	return $element;
 }
 
 function ua_user_form_validate($form, &$form_state)
@@ -489,6 +500,7 @@ function ua_log_filter_form_submit($form, &$form_state)
 
 function ua_log_page()
 {
+	drupal_set_title(t('User admin log'));
 	$acts = ua_log_actions();
 	$header = array(
 		array('data' => t('When'), 'field' => 'l.ul_id', 'sort' => 'desc'),
