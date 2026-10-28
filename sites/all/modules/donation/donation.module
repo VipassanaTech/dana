@@ -56,6 +56,8 @@ function donation_permission()
 	$perms['view donors'] = array('title' => t('View Donors') );
 	$perms['edit donors'] = array('title' => t('Edit Donors') );
 	$perms['delete donors'] = array('title' => t('Delete Donors') );
+	$perms['manage centre users'] = array('title' => t('Manage centre users (User Admin)'), 'restrict access' => TRUE);
+	$perms['view user admin log'] = array('title' => t('View the user admin log'));
 
 	return $perms;
 }
@@ -242,6 +244,40 @@ function donation_menu()
 	     'access callback' => 'donation_reprint_access',
 	     'type' => MENU_CALLBACK);
 
+	// User Admin role (spec 2026-10-28): centre-level user management, see user-admin.inc
+	$items['centre-users'] = array( 'title' => t('Users'),
+	     'page callback' => 'ua_list_page',
+	     'access arguments' => array(UA_PERM_MANAGE),
+	     'menu_name' => 'main-menu',
+	     'weight' => 5,
+	     'type' => MENU_NORMAL_ITEM);
+
+	$items['centre-users/list'] = array( 'title' => t('Users'),
+	     'type' => MENU_DEFAULT_LOCAL_TASK,
+	     'weight' => -10);
+
+	$items['centre-users/add'] = array( 'title' => t('Add user'),
+	     'page callback' => 'drupal_get_form',
+	     'page arguments' => array('ua_user_form'),
+	     'access arguments' => array(UA_PERM_MANAGE),
+	     'type' => MENU_LOCAL_ACTION);
+
+	$items['centre-users/log'] = array( 'title' => t('User admin log'),
+	     'page callback' => 'ua_log_page',
+	     'access arguments' => array(UA_PERM_LOG),
+	     'type' => MENU_LOCAL_TASK);
+
+	$items['centre-users/%user/edit'] = array( 'title' => t('Edit user'),
+	     'page callback' => 'ua_edit_page',
+	     'page arguments' => array(1),
+	     'access arguments' => array(UA_PERM_MANAGE),
+	     'type' => MENU_CALLBACK);
+
+	$items['centre-users/%user/status'] = array( 'title' => t('Block or unblock user'),
+	     'page callback' => 'ua_status_page',
+	     'page arguments' => array(1),
+	     'access arguments' => array(UA_PERM_MANAGE),
+	     'type' => MENU_CALLBACK);
 
 	return $items;
 }

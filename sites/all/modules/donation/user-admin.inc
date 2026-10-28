@@ -211,3 +211,126 @@ function donation_user_delete($account)
 {
 	ua_log('cancelled', $account->uid, $account->name, array('account deleted'));
 }
+
+/* ======================================================================
+ * D. Users list and block / unblock
+ * ====================================================================== */
+
+/** Filter form above the list; submits to the list URL as a query (search, role, status). */
+function ua_list_filter_form($form, &$form_state)
+{
+	$roles = array('' => t('- Any -')) + user_roles(TRUE);
+	unset($roles[DRUPAL_AUTHENTICATED_RID]);
+	foreach (ua_admin_rids() as $rid)
+		unset($roles[$rid]);
+	$form['f'] = array('#type' => 'fieldset', '#title' => t('Filter'), '#attributes' => array('class' => array('container-inline')));
+	$form['f']['search'] = array('#type' => 'textfield', '#title' => t('Name or email'), '#size' => 25,
+		'#default_value' => isset($_GET['search']) ? $_GET['search'] : '');
+	$form['f']['role'] = array('#type' => 'select', '#title' => t('Role'), '#options' => $roles,
+		'#default_value' => isset($_GET['role']) ? $_GET['role'] : '');
+	$form['f']['status'] = array('#type' => 'select', '#title' => t('Status'),
+		'#options' => array('' => t('- Any -'), '1' => t('Active'), '0' => t('Blocked')),
+		'#default_value' => isset($_GET['status']) ? $_GET['status'] : '');
+	$form['f']['go'] = array('#type' => 'submit', '#value' => t('Filter'));
+	return $form;
+}
+
+function ua_list_filter_form_submit($form, &$form_state)
+{
+	$v = $form_state['values'];
+	$q = array_filter(array('search' => trim($v['search']), 'role' => (string) $v['role'], 'status' => (string) $v['status']), 'strlen');
+	$form_state['redirect'] = array('centre-users', array('query' => $q));
+}
+
+/** The Users list: everyone but user #1 and administrators; rows of User Admins are read-only. */
+function ua_list_page()
+{
+	$admin = ua_admin_rids();
+	$ua = ua_role_rid();
+	$header = array(
+		array('data' => t('Username'), 'field' => 'u.name', 'sort' => 'asc'),
+		array('data' => t('Email'), 'field' => 'u.mail'),
+		t('Roles'),
+		array('data' => t('Status'), 'field' => 'u.status'),
+		array('data' => t('Last access'), 'field' => 'u.access'),
+		t('Actions'));
+	$q = db_select('users', 'u')->extend('PagerDefault')->extend('TableSort');
+	$q->fields('u', array('uid', 'name', 'mail', 'status', 'access'));
+	$q->condition('u.uid', 1, '>');
+	if ($admin)
+	{
+		$sub = db_select('users_roles', 'ar')->fields('ar', array('uid'))->condition('ar.rid', array_values($admin), 'IN');
+		$q->condition('u.uid', $sub, 'NOT IN');
+	}
+	if (isset($_GET['search']) && trim($_GET['search']) !== '')
+	{
+		$like = '%' . db_like(trim($_GET['search'])) . '%';
+		$q->condition(db_or()->condition('u.name', $like, 'LIKE')->condition('u.mail', $like, 'LIKE'));
+	}
+	if (isset($_GET['role']) && ctype_digit((string) $_GET['role']))
+	{
+		$sub = db_select('users_roles', 'fr')->fields('fr', array('uid'))->condition('fr.rid', (int) $_GET['role']);
+		$q->condition('u.uid', $sub, 'IN');
+	}
+	if (isset($_GET['status']) && ($_GET['status'] === '0' || $_GET['status'] === '1'))
+		$q->condition('u.status', (int) $_GET['status']);
+	$q->limit(50)->orderByHeader($header);
+	$users = $q->execute()->fetchAllAssoc('uid');
+
+	$roles_of = array();
+	if ($users)
+	{
+		$all = user_roles();
+		foreach (db_query('SELECT uid, rid FROM {users_roles} WHERE uid IN (:u)', array(':u' => array_keys($users))) as $r)
+			$roles_of[$r->uid][(int) $r->rid] = isset($all[$r->rid]) ? $all[$r->rid] : (string) $r->rid;
+	}
+	$rows = array();
+	foreach ($users as $uid => $u)
+	{
+		$rr = isset($roles_of[$uid]) ? $roles_of[$uid] : array();
+		if ($ua && isset($rr[$ua]))
+			$actions = t('Managed by administrators');
+		else
+			$actions = l(t('Edit'), 'centre-users/' . $uid . '/edit') . ' &middot; ' . l($u->status ? t('Block') : t('Unblock'), 'centre-users/' . $uid . '/status');
+		$rows[] = array(check_plain($u->name), check_plain($u->mail), check_plain(implode(', ', $rr)),
+			$u->status ? t('Active') : t('Blocked'), $u->access ? format_date($u->access, 'short') : t('Never'), $actions);
+	}
+	return array(
+		'filter' => drupal_get_form('ua_list_filter_form'),
+		'table' => array('#theme' => 'table', '#header' => $header, '#rows' => $rows, '#empty' => t('No users found.')),
+		'pager' => array('#theme' => 'pager'),
+	);
+}
+
+function ua_status_page($account)
+{
+	if (!ua_target($account->uid, 'open block/unblock'))
+		return MENU_ACCESS_DENIED;
+	return drupal_get_form('ua_status_form', $account);
+}
+
+function ua_status_form($form, &$form_state, $account)
+{
+	$form['#ua_uid'] = (int) $account->uid;
+	$n = array('@n' => $account->name);
+	if ($account->status)
+		return confirm_form($form, t('Block @n?', $n), 'centre-users',
+			t('@n will be logged out at once and cannot log in until unblocked.', $n), t('Block'), t('Cancel'));
+	return confirm_form($form, t('Unblock @n?', $n), 'centre-users',
+		t('@n will be able to log in again and will get the standard "account activated" email.', $n), t('Unblock'), t('Cancel'));
+}
+
+function ua_status_form_submit($form, &$form_state)
+{
+	$form_state['redirect'] = 'centre-users';
+	$account = ua_target($form['#ua_uid'], 'block or unblock');
+	if (!$account)
+	{
+		drupal_set_message(t('This user cannot be changed here.'), 'error');
+		return;
+	}
+	$block = (int) $account->status === 1;
+	user_save($account, array('status' => $block ? 0 : 1));
+	drupal_set_message($block ? t('%n is blocked and has been logged out.', array('%n' => $account->name))
+		: t('%n is unblocked.', array('%n' => $account->name)));
+}
