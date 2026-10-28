@@ -2,7 +2,7 @@
 /**
  * User Admin role: centre-level user management without Drupal's 'administer users'.
  * Spec: "User Admin Role: Design Spec" (2026-10-28).
- *   centre-users               list (administrators hidden, User Admins read-only)
+ *   centre-users               list (administrators hidden; your own row read-only, other User Admins manageable)
  *   centre-users/add           add a user (temporary password, forced change at first login)
  *   centre-users/%user/edit    edit a user
  *   centre-users/%user/status  block / unblock (confirm form)
@@ -62,10 +62,7 @@ function ua_protected_reason($account)
 	foreach (ua_admin_rids() as $rid)
 		if (isset($roles[$rid]))
 			return 'administrator';
-	$ua = ua_role_rid();
-	if ($ua && isset($roles[$ua]))
-		return UA_ROLE;
-	return '';
+	return '';                                             // other User Admins are manageable (decision 2026-10-28: centres self-sufficient)
 }
 
 /** Loads user $uid for a change on these pages; a protected user or your own account logs a refusal and returns NULL. */
@@ -242,11 +239,11 @@ function ua_list_filter_form_submit($form, &$form_state)
 	$form_state['redirect'] = array('centre-users', array('query' => $q));
 }
 
-/** The Users list: everyone but user #1 and administrators; rows of User Admins are read-only. */
+/** The Users list: everyone but user #1 and administrators; your own row is read-only (use My account). */
 function ua_list_page()
 {
+	global $user;
 	$admin = ua_admin_rids();
-	$ua = ua_role_rid();
 	$header = array(
 		array('data' => t('Username'), 'field' => 'u.name', 'sort' => 'asc'),
 		array('data' => t('Email'), 'field' => 'u.mail'),
@@ -288,8 +285,8 @@ function ua_list_page()
 	foreach ($users as $uid => $u)
 	{
 		$rr = isset($roles_of[$uid]) ? $roles_of[$uid] : array();
-		if ($ua && isset($rr[$ua]))
-			$actions = t('Managed by administrators');
+		if ((int) $uid === (int) $user->uid)
+			$actions = l(t('You: use My account'), 'user/' . $uid . '/edit');
 		else
 			$actions = l(t('Edit'), 'centre-users/' . $uid . '/edit') . ' &middot; ' . l($u->status ? t('Block') : t('Unblock'), 'centre-users/' . $uid . '/status');
 		$rows[] = array(check_plain($u->name), check_plain($u->mail), check_plain(implode(', ', $rr)),
@@ -369,9 +366,13 @@ function ua_user_form($form, &$form_state, $account = NULL)
 		$form['several'] = array('#weight' => -10, '#markup' => '<div class="messages warning">'
 			. t('This user has several roles: %r. A user may have only one role: choose the one to keep; saving removes the others.',
 				array('%r' => implode(', ', array_intersect_key($allowed, array_flip($current))))) . '</div>');
-	$form['role'] = array('#type' => 'radios', '#title' => t('Role'), '#required' => TRUE, '#options' => array_map('check_plain', $allowed),
-		'#default_value' => count($current) === 1 ? reset($current) : NULL,
+	$is_ua = !$new && ua_role_rid() && isset($account->roles[ua_role_rid()]);
+	$form['role'] = array('#type' => 'radios', '#title' => t('Role'), '#required' => TRUE,
+		'#options' => array_map('check_plain', $allowed) + array('none' => t('None (user management only; needs User Admin below)')),
+		'#default_value' => count($current) === 1 ? reset($current) : ((!$current && $is_ua) ? 'none' : NULL),
 		'#description' => t('Each user has exactly one role.'));
+	$form['user_admin'] = array('#type' => 'checkbox', '#title' => t('User Admin: can add, edit and block users'),
+		'#default_value' => $is_ua ? 1 : 0);
 	if (!$new)
 		$form['status'] = array('#type' => 'radios', '#title' => t('Status'), '#options' => array(1 => t('Active'), 0 => t('Blocked')),
 			'#default_value' => (int) $account->status);
@@ -409,13 +410,29 @@ function ua_user_form_validate($form, &$form_state)
 	}
 	if ((string) $role === '')
 		return;                                           // Drupal has already set "Role field is required."
-	if (!isset($allowed[(int) $role]))
+	$want_ua = !empty($v['user_admin']);
+	if ((string) $role === 'none')
+	{
+		if (!$want_ua)
+		{
+			form_set_error('role', t('Choose a role, or tick User Admin for a user who only manages users.'));
+			return;
+		}
+		$posted = array();
+	}
+	elseif (!isset($allowed[(int) $role]) || (string) (int) $role !== (string) $role)
 	{
 		ua_log('refused', $uid, $tname, array('tried to give a role outside the allowed list'), 'users-pages');
 		form_set_error('role', t('This role cannot be given here.'));
 		return;
 	}
-	$posted = array((int) $role);
+	else
+		$posted = array((int) $role);
+	if ($want_ua && !ua_role_rid())
+	{
+		form_set_error('user_admin', t('The User Admin role does not exist on this site.'));
+		return;
+	}
 	$name = trim($v['name']);
 	$err = user_validate_name($name);
 	if ($err)
@@ -430,7 +447,8 @@ function ua_user_form_validate($form, &$form_state)
 	if ((string) $v['pass'] !== '' && function_exists('_password_policy_constraint_validate'))
 	{
 		$check = (object) array('uid' => $uid, 'name' => $name,
-			'roles' => array(DRUPAL_AUTHENTICATED_RID => 'authenticated user') + array_intersect_key($allowed, array_flip($posted)));
+			'roles' => array(DRUPAL_AUTHENTICATED_RID => 'authenticated user') + array_intersect_key($allowed, array_flip($posted))
+				+ ($want_ua ? array(ua_role_rid() => UA_ROLE) : array()));
 		$errors = _password_policy_constraint_validate($v['pass'], $check);
 		if ($errors)
 			form_set_error('pass', t('The password does not meet the site rules:') . '<ul><li>' . implode('</li><li>', $errors) . '</li></ul>');
@@ -442,16 +460,19 @@ function ua_user_form_submit($form, &$form_state)
 	$v = $form_state['values'];
 	$uid = (int) $form['#ua_uid'];
 	$allowed = ua_allowed_roles();
+	$ua = ua_role_rid();
 	$roles = array(DRUPAL_AUTHENTICATED_RID => 'authenticated user');
-	$rid = (int) $v['role'];                              // exactly one allowed role; any other allowed role is removed
+	$rid = (string) $v['role'] === 'none' ? 0 : (int) $v['role'];   // exactly one main role (or none); any other is removed
 	if (isset($allowed[$rid]))
 		$roles[$rid] = $allowed[$rid];
+	if ($ua && !empty($v['user_admin']))                    // User Admin on top, or alone with 'none'
+		$roles[$ua] = UA_ROLE;
 	$edit = array('name' => trim($v['name']), 'mail' => trim($v['mail']));
 	if ($uid)
 	{
 		$account = user_load($uid, TRUE);
-		foreach ($account->roles as $rid => $rname)        // roles outside the allowed list are kept as they are
-			if (!isset($allowed[$rid]))
+		foreach ($account->roles as $rid => $rname)        // roles outside the main list and not User Admin are kept as they are
+			if (!isset($allowed[$rid]) && $rid != $ua)
 				$roles[$rid] = $rname;
 		$edit['status'] = (int) $v['status'];
 	}
