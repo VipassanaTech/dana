@@ -28,8 +28,17 @@ INSERT IGNORE INTO role_permission (rid, permission, module)
 INSERT IGNORE INTO role_permission (rid, permission, module)
   SELECT rid, 'view user admin log', 'donation' FROM role WHERE name IN ('User Admin', 'administrator');
 
+-- Password rules for every user (decision 2026-10-28): the site's "Default" policy (the only one on every site) also covers
+-- 'authenticated user' (rid 2), so every role follows it from the next password set or change; existing passwords are not
+-- touched (expiration stays as it is). A Default policy that was switched off (Laddha) is switched on.
+INSERT IGNORE INTO password_policy_role (pid, rid)
+  SELECT pid, 2 FROM password_policy WHERE name = 'Default';
+UPDATE password_policy SET enabled = 1 WHERE name = 'Default' AND enabled = 0;
+
 SELECT 'UA' AS phase,
   (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dh_user_log') AS log_table,
   (SELECT COUNT(*) FROM role WHERE name = 'User Admin') AS role_ok,
   (SELECT COUNT(*) FROM role_permission p JOIN role r ON r.rid = p.rid
-     WHERE r.name IN ('User Admin', 'administrator') AND p.permission IN ('manage centre users', 'view user admin log')) AS perms;
+     WHERE r.name IN ('User Admin', 'administrator') AND p.permission IN ('manage centre users', 'view user admin log')) AS perms,
+  (SELECT COUNT(*) FROM password_policy_role pr JOIN password_policy p ON p.pid = pr.pid WHERE p.name = 'Default' AND pr.rid = 2) AS policy_all,
+  (SELECT COUNT(*) FROM password_policy WHERE name = 'Default' AND enabled = 1) AS policy_on;

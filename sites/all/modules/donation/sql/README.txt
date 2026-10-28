@@ -18,6 +18,8 @@ Re-enable: R1  ->  B  ->  deploy the code  ->  C
 User Admin role (2026-10-28) — UA-user-admin.sql
   Adds per site: table dh_user_log (permanent account-change log), role 'User Admin', and the permissions
   'manage centre users' + 'view user admin log' for User Admin and administrator. Safe to re-run.
+  Also (decision 2026-10-28): the site's 'Default' password policy covers 'authenticated user' (every user, from their
+  next password set or change; existing passwords untouched) and is switched on where it was off (Laddha).
   Order: UA on all sites -> deploy the code -> on every site: drush cc menu + drush ev 'module_implements("", FALSE, TRUE);'
   Run:   DB_EXCLUDE=dana_ahobilam_premerge ./dana-donorver-fleet.sh UA [--only DB]   (dry run), then add --execute
   New sites: create-dana-domain runs UA-user-admin.sql after the template (with B and C).
@@ -25,4 +27,5 @@ User Admin role (2026-10-28) — UA-user-admin.sql
     DELETE FROM role_permission WHERE permission IN ('manage centre users','view user admin log');
     DELETE ur FROM users_roles ur JOIN role r ON r.rid = ur.rid WHERE r.name = 'User Admin';
     DELETE FROM role WHERE name = 'User Admin';
+    DELETE FROM password_policy_role WHERE rid = 2;   (only if the rules should again cover just Donation Admin/Restricted)
   Keep dh_user_log: it is the audit trail.
