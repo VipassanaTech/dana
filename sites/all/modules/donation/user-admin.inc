@@ -334,3 +334,121 @@ function ua_status_form_submit($form, &$form_state)
 	drupal_set_message($block ? t('%n is blocked and has been logged out.', array('%n' => $account->name))
 		: t('%n is unblocked.', array('%n' => $account->name)));
 }
+
+/* ======================================================================
+ * E. Add / edit
+ * ====================================================================== */
+
+function ua_edit_page($account)
+{
+	if (!ua_target($account->uid, 'open edit'))
+		return MENU_ACCESS_DENIED;
+	drupal_set_title(t('Edit user @n', array('@n' => $account->name)));
+	return drupal_get_form('ua_user_form', $account);
+}
+
+/** Add ($account NULL) or edit form. Roles offered: ua_allowed_roles() only. */
+function ua_user_form($form, &$form_state, $account = NULL)
+{
+	$new = empty($account->uid);
+	$allowed = ua_allowed_roles();
+	$form['#ua_uid'] = $new ? 0 : (int) $account->uid;
+	$form['name'] = array('#type' => 'textfield', '#title' => t('Username'), '#maxlength' => USERNAME_MAX_LENGTH, '#required' => TRUE,
+		'#default_value' => $new ? '' : $account->name,
+		'#description' => $new ? '' : t('The username is the login; after a change the user logs in with the new one.'));
+	$form['mail'] = array('#type' => 'textfield', '#title' => t('Email'), '#maxlength' => EMAIL_MAX_LENGTH, '#required' => TRUE,
+		'#default_value' => $new ? '' : $account->mail);
+	$form['pass'] = array('#type' => 'password_confirm', '#required' => $new,
+		'#description' => $new ? t('A temporary password. The user must set their own at first login.')
+			: t('Leave blank to keep the current password. A new temporary password must be changed at next login.'));
+	$form['roles'] = array('#type' => 'checkboxes', '#title' => t('Roles'), '#options' => array_map('check_plain', $allowed),
+		'#default_value' => $new ? array() : array_keys(array_intersect_key($account->roles, $allowed)));
+	if (!$new)
+		$form['status'] = array('#type' => 'radios', '#title' => t('Status'), '#options' => array(1 => t('Active'), 0 => t('Blocked')),
+			'#default_value' => (int) $account->status);
+	$form['actions'] = array('#type' => 'actions');
+	$form['actions']['submit'] = array('#type' => 'submit', '#value' => $new ? t('Create user') : t('Save'));
+	$form['actions']['cancel'] = array('#markup' => l(t('Cancel'), 'centre-users'));
+	return $form;
+}
+
+function ua_user_form_validate($form, &$form_state)
+{
+	$v = $form_state['values'];
+	$uid = (int) $form['#ua_uid'];
+	if ($uid && !ua_target($uid, 'save'))
+	{
+		form_set_error('', t('This user cannot be changed here.'));
+		return;
+	}
+	$allowed = ua_allowed_roles();
+	$posted = array_keys(array_filter($v['roles']));
+	if (array_diff($posted, array_keys($allowed)))
+	{
+		$tname = $uid ? (string) user_load($uid)->name : trim($v['name']);
+		ua_log('refused', $uid, $tname, array('tried to give a role outside the allowed list'), 'users-pages');
+		form_set_error('roles', t('One of the chosen roles cannot be given here.'));
+		return;
+	}
+	$name = trim($v['name']);
+	$err = user_validate_name($name);
+	if ($err)
+		form_set_error('name', $err);
+	elseif (db_query('SELECT 1 FROM {users} WHERE uid <> :u AND LOWER(name) = LOWER(:n)', array(':u' => $uid, ':n' => $name))->fetchField())
+		form_set_error('name', t('The username %n is already taken.', array('%n' => $name)));
+	$mail = trim($v['mail']);
+	if (!valid_email_address($mail))
+		form_set_error('mail', t('The email address %m is not valid.', array('%m' => $mail)));
+	elseif (db_query('SELECT 1 FROM {users} WHERE uid <> :u AND LOWER(mail) = LOWER(:m)', array(':u' => $uid, ':m' => $mail))->fetchField())
+		form_set_error('mail', t('The email address %m is already used by another user.', array('%m' => $mail)));
+	if ((string) $v['pass'] !== '' && function_exists('_password_policy_constraint_validate'))
+	{
+		$check = (object) array('uid' => $uid, 'name' => $name,
+			'roles' => array(DRUPAL_AUTHENTICATED_RID => 'authenticated user') + array_intersect_key($allowed, array_flip($posted)));
+		$errors = _password_policy_constraint_validate($v['pass'], $check);
+		if ($errors)
+			form_set_error('pass', t('The password does not meet the site rules:') . '<ul><li>' . implode('</li><li>', $errors) . '</li></ul>');
+	}
+}
+
+function ua_user_form_submit($form, &$form_state)
+{
+	$v = $form_state['values'];
+	$uid = (int) $form['#ua_uid'];
+	$allowed = ua_allowed_roles();
+	$roles = array(DRUPAL_AUTHENTICATED_RID => 'authenticated user');
+	foreach (array_filter($v['roles']) as $rid)
+		if (isset($allowed[$rid]))
+			$roles[(int) $rid] = $allowed[$rid];
+	$edit = array('name' => trim($v['name']), 'mail' => trim($v['mail']));
+	if ($uid)
+	{
+		$account = user_load($uid, TRUE);
+		foreach ($account->roles as $rid => $rname)        // roles outside the allowed list are kept as they are
+			if (!isset($allowed[$rid]))
+				$roles[$rid] = $rname;
+		$edit['status'] = (int) $v['status'];
+	}
+	else
+	{
+		$account = new stdClass();
+		$account->is_new = TRUE;
+		$edit['status'] = 1;
+		$edit['init'] = $edit['mail'];
+	}
+	$edit['roles'] = $roles;
+	if ((string) $v['pass'] !== '')
+	{
+		$edit['pass'] = $v['pass'];
+		$edit['force_password_change'] = 1;               // password_policy forces a change at next login
+	}
+	$saved = user_save($account, $edit);
+	if (!$saved)
+	{
+		drupal_set_message(t('The user could not be saved. Please try again.'), 'error');
+		return;
+	}
+	drupal_set_message($uid ? t('User %n saved.', array('%n' => $saved->name))
+		: t('User %n created. They must set their own password at first login.', array('%n' => $saved->name)));
+	$form_state['redirect'] = 'centre-users';
+}
