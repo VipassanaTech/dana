@@ -2463,6 +2463,11 @@ function donation_report_form($form, &$form_state)
 					$headers = array_keys($row);
 					$headers_done = true;
 				}
+				// Stored XSS: donor and donation text (often from public DIPI registration) is escaped here; the columns
+				// rebuilt as HTML below (links, tags, actions) escape their own text.
+				foreach ($row as $k => $v)
+					if (!in_array($k, array('Tags', 'Action 1', 'Action 2', 'Action 3', 'Receipt No', 'Name', 'Extra'), TRUE))
+						$row[$k] = check_plain((string) $v);
 				$vals = array_values($row);
 				$temp = explode("||", $row['Receipt No']);
 				$receipt_f = $temp[1];
@@ -2482,7 +2487,7 @@ function donation_report_form($form, &$form_state)
 
 				}
 				else
-					$row['Receipt No'] = $temp[1]; //variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
+					$row['Receipt No'] = check_plain($temp[1]); //variable_get('receipt_prefix', '').str_pad($temp[0], 7, "0", STR_PAD_LEFT);
 				$temp = explode("||", $row['Action 1']);
 				$row_deleted = $temp[2];
 				if (user_access('edit own donation') || user_access('administer donation'))
@@ -2538,7 +2543,7 @@ function donation_report_form($form, &$form_state)
 						array('attributes' => array('class' => array('address-proof'), 'data-title' => $temp[0] )));
 				}
 				else
-					$row['Name'] = trim($temp[0]);
+					$row['Name'] = check_plain(trim($temp[0]));
 				// L28: the donation's financial year uses its own donor details (snapshot)
 				if (isset($temp[2]) && $temp[2] !== '')
 					$row['Name'] = array('data' => $row['Name'], 'class' => array('fy-own'),
@@ -2562,7 +2567,7 @@ function donation_report_form($form, &$form_state)
 				if ( $row_deleted )
 				{
 					$t = explode("||", $row['Extra']);
-					$row['Extra'] = "Deleted by ".$t[0]." on ".$t[1];
+					$row['Extra'] = check_plain("Deleted by ".$t[0]." on ".(isset($t[1]) ? $t[1] : ''));
 				}
 				else
 					$row['Extra'] = '';
@@ -2646,7 +2651,7 @@ function donation_report_form($form, &$form_state)
         else
         {
             while ( $row_typewise = $result_typewise->fetchAssoc())
-                $rows_typewise[] = $row_typewise;
+                $rows_typewise[] = array_map('check_plain', $row_typewise);
 
             $headers_typewise = array('ID-Type-Code', 'ID-Type-Name', 'Foreign', 'Amount-Sum');
             $table_typewise = theme('table',array('header' => $headers_typewise, 'rows' => $rows_typewise));
@@ -4315,7 +4320,8 @@ function view_log_form( $form, &$form_state, $donation_id )
 	$rows = array();
 	while( $row = $hand->fetchAssoc())
 	{
-		$row['l_msg'] = nl2br(trim($row['l_msg']));
+		$row['l_msg'] = nl2br(check_plain(trim($row['l_msg'])));       // stored XSS: log text can carry donor and staff input
+		$row['name'] = check_plain($row['name']);
 		$rows[] = $row;
 	}
 	$headers = array('Log', 'DateTime', 'User');
