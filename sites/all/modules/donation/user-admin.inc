@@ -520,3 +520,14 @@ function ua_log_page()
 		'pager' => array('#theme' => 'pager'),
 	);
 }
+
+/* ======================================================================
+ * G. Login landing
+ * ====================================================================== */
+
+/** Implements hook_user_login(): a User Admin without donation access lands on the Users page (front page is 'donation'). */
+function donation_user_login(&$edit, $account)
+{
+	if (empty($_GET['destination']) && user_access(UA_PERM_MANAGE, $account) && !user_access('access donation', $account))
+		$_GET['destination'] = 'centre-users';
+}
