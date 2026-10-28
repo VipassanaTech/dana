@@ -127,3 +127,87 @@ function ua_log($action, $target_uid, $target_name, array $details = array(), $v
 		'ul_ip' => (string) ip_address(),
 	))->execute();
 }
+
+/* ======================================================================
+ * C. Account events: every route (these pages, Drupal's People pages, My account, cron, drush)
+ * ====================================================================== */
+
+/** Role names of an account (built-in roles left out), sorted. */
+function ua_role_names($account)
+{
+	$all = user_roles();
+	$names = array();
+	foreach ((isset($account->roles) ? $account->roles : array()) as $rid => $v)
+		if ($v && $rid != DRUPAL_AUTHENTICATED_RID && $rid != DRUPAL_ANONYMOUS_RID && isset($all[$rid]))
+			$names[] = $all[$rid];
+	sort($names);
+	return $names;
+}
+
+/** What changed in the five tracked fields (username, email, status, roles, password), as log details. */
+function ua_diff($old, $new)
+{
+	$d = array();
+	if ((string) $old->name !== (string) $new->name)
+		$d[] = 'username ' . $old->name . ' → ' . $new->name;
+	if ((string) $old->mail !== (string) $new->mail)
+		$d[] = 'email ' . $old->mail . ' → ' . $new->mail;
+	if ((int) $old->status !== (int) $new->status)
+		$d[] = (int) $new->status ? 'unblocked' : 'blocked';
+	$or = ua_role_names($old);
+	$nr = ua_role_names($new);
+	$add = array_diff($nr, $or);
+	$del = array_diff($or, $nr);
+	if ($add)
+		$d[] = 'roles + ' . implode(', ', $add);
+	if ($del)
+		$d[] = 'roles − ' . implode(', ', $del);
+	if ((string) $old->pass !== (string) $new->pass)
+		$d[] = 'password changed';
+	return $d;
+}
+
+/** Implements hook_user_insert(). */
+function donation_user_insert(&$edit, $account, $category)
+{
+	$r = ua_role_names($account);
+	$d = array('email ' . $account->mail, $account->status ? 'active' : 'blocked', 'roles: ' . ($r ? implode(', ', $r) : '(none)'));
+	if (!empty($edit['force_password_change']))
+		$d[] = 'must change password at next login';
+	ua_log('created', $account->uid, $account->name, $d);
+}
+
+/** Implements hook_user_update(): one line when username, email, status, roles or password changed. */
+function donation_user_update(&$edit, $account, $category)
+{
+	global $user;
+	if (empty($account->original))
+		return;
+	$o = $account->original;
+	$d = ua_diff($o, $account);
+	if (!$d)
+		return;
+	if ((int) $o->status !== (int) $account->status)
+		$action = $account->status ? 'unblocked' : 'blocked';
+	elseif (ua_role_names($o) !== ua_role_names($account))
+		$action = 'roles';
+	elseif (count($d) === 1 && (string) $o->pass !== (string) $account->pass)
+		$action = ((int) $user->uid === (int) $account->uid) ? 'password-own' : 'password';
+	else
+		$action = 'edited';
+	if (!empty($edit['force_password_change']) && (int) $user->uid !== (int) $account->uid)
+		$d[] = 'must change password at next login';
+	ua_log($action, $account->uid, $account->name, $d);
+}
+
+/** Implements hook_user_cancel(). */
+function donation_user_cancel($edit, $account, $method)
+{
+	ua_log('cancelled', $account->uid, $account->name, array('method ' . $method));
+}
+
+/** Implements hook_user_delete(). */
+function donation_user_delete($account)
+{
+	ua_log('cancelled', $account->uid, $account->name, array('account deleted'));
+}
