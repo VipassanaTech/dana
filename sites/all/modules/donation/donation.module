@@ -1328,7 +1328,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			t += "<tr><td>Category</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-category option:selected").text())+"</b></td></tr>";
 			t += "<tr><td>Gender</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("input[name=d_gender]:checked").next("label:first").text())+"</b></td></tr>";
 			t += "<tr><td>Donor Name</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-name").val())+"</b></td></tr>";
-			t += "<tr><td>NI/SSN/DIN/NID/PAN/ID</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-id-no").val())+"</b></td></tr>";
+			t += "<tr><td>ID Type</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-id-type option:selected").text())+"</b></td></tr>";
+			t += "<tr><td>ID No</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-id-no").val())+"</b></td></tr>";
 			t += "<tr><td>Contact</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-contact").val())+"</b></td></tr>";
 			t += "<tr><td>Post/Zip Code/</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-pincode").val())+"</b></td></tr>";
 			t += "<tr><td>Email</td><td>&nbsp;&nbsp;</td><td><b>"+DanaDonor.esc($("#edit-d-email").val())+"</b></td></tr>";
