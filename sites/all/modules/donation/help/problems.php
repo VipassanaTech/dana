@@ -24,13 +24,21 @@ return array(
       'id' => 'invalid-pan',
       'title' => 'A message says "Invalid PAN card no!"',
       'rights' => array('access donation', 'edit donors'),
-      'body' => '<p>A PAN has 10 characters in this order: 5 letters, 4 digits, then 1 letter. For example: ABCDE1234F.</p>'
+      'body' => '<p>A PAN has 10 characters in this order: 5 letters, 4 digits, then 1 letter. For example: ABCPE1234F.</p>'
         . '<ul>'
         . '<li>If the message says <i>You typed ...</i>, a character is missing or extra. Check with the donor.</li>'
         . '<li>Look for a 0 (zero) typed in place of the letter O, or a 1 (one) in place of the letter I.</li>'
+        . '<li>The message may say <i>its 4th letter must be one of P, C, H, F, A, T, B, L, J or G</i>. Then a letter was mistyped. Check the PAN with the donor.</li>'
         . '<li>If the message says <i>This looks like an Aadhaar number, not a PAN</i>, change <b class="ui">ID Type</b> to Aadhaar.</li>'
         . '</ul>'
         . '<p>Small letters are not a problem. Dana changes them to capital letters by itself.</p>',
+    ),
+    array(
+      'id' => 'wrong-type',
+      'title' => 'A message says "This looks like an Aadhaar number" or "This looks like a PAN number"',
+      'rights' => array('access donation', 'edit donors'),
+      'body' => '<p>The number was typed under the wrong <b class="ui">ID Type</b>, for example an Aadhaar number under Passport.'
+        . ' Change <b class="ui">ID Type</b> to the type the message says, then save again.</p>',
     ),
     array(
       'id' => 'not-sent',

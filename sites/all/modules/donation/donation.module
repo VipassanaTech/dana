@@ -3502,6 +3502,7 @@ function donation_upload_form($form, &$form_state)
 		dana_upload_review($form, $form_state['storage']['check'], 'csv');
 		return $form;
 	}
+	$form['dana_help'] = array('#markup' => dana_help_link('upload-csv'), '#weight' => -100);
 	$form['intro'] = array('#markup' => '<p>' . t('Add the students of a course to Dana, so they can be found on the donation form. '
 		. 'Use the template: one line for each student, with the 14 columns in the same order.') . ' '
 		. l(t('Download the template'), 'admin/upload-csv/template') . '</p><p>'
@@ -3544,6 +3545,7 @@ function donation_donor_upload_form($form, &$form_state)
 	$note = donor_apr_may_note();
 	if ($note !== '')
 		$form['apr_may_note'] = array('#markup' => '<div class="messages warning">' . check_plain($note) . '</div>');
+	$form['dana_help'] = array('#markup' => dana_help_link('donor-master', 'upload'), '#weight' => -100);
 	$form['intro'] = array('#markup' => '<p>' . t('Correct the ID Type and ID No of many donors at once: download the Donor Master from the report, '
 		. 'change only the ID Type and ID No columns, and upload the file here.') . '</p><p>'
 		. t('Dana first checks the whole file and shows every problem. Nothing is changed until the file has no problems and you click Use this file.') . '</p>');

@@ -12,7 +12,7 @@
 
 /** The help pages, in menu order. A page file help/<key>.php must exist for a key to show. */
 function dana_help_order() {
-  return array('donation', 'change-donation', 'report', 'tags', 'donors', 'donor-master', '10bd',
+  return array('donation', 'change-donation', 'report', 'tags', 'donors', 'donor-master', 'upload-csv', '10bd',
     'tally', 'settings', 'users', 'problems');
 }
 
@@ -90,9 +90,13 @@ function dana_help_page_visible(array $page, $account = NULL) {
 /**
  * Turns the tokens in a section body into HTML:
  * {help:<page>} or {help:<page>#<section>} = link to that help page; {img:<name>} = help/images/<name>.png;
- * {tab:<name>} = the name of a top-menu tab as this centre shows it (see dana_help_tab_title()); <p class="note"> = a "Note" box.
+ * {tab:<name>} = the name of a top-menu tab as this centre shows it (see dana_help_tab_title()); <p class="note"> = a "Note" box;
+ * {link:<dana path>|<label>} = a link to that Dana page (e.g. {link:admin/upload-csv|Upload CSV}).
  */
 function dana_help_render_body($html) {
+  $html = preg_replace_callback('/\{link:([a-z0-9\/-]+)\|([^}]+)\}/', function ($m) {
+    return l($m[2], $m[1]);
+  }, $html);
   $html = preg_replace_callback('/\{tab:([a-z0-9]+)\}/', function ($m) {
     return '<b class="ui">' . check_plain(dana_help_tab_title($m[1])) . '</b>';
   }, $html);
