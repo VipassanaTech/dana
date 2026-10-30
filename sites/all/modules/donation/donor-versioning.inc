@@ -1476,17 +1476,18 @@ function donation_send_after_save($donation_id, $receipt, array $in)
 		$r = send_donor_email($donation_id);
 		if (!empty($r['success']))
 			drupal_set_message(t('Receipt emailed to @to', array('@to' => $r['to'])) . $fy_note);
+		elseif ($r['to'] !== '')   // a send was attempted and failed (a missing address is already reported inside)
+			drupal_set_message(t('The donation is saved, but the receipt could NOT be emailed to @to: @why. You can send it again from the report.',
+				array('@to' => $r['to'], '@why' => $r['msg'])), 'warning');
 	}
-	if (!empty($in['whatsapp']) && $eff)
+	if (!empty($in['whatsapp']))
 	{
-		$wa_id = whatsapp_360_get_waid($eff['d_contact']);
-		if ($wa_id)
-		{
-			$params_body = array($eff['d_name'], $eff['d_currency'] . ' ' . $eff['d_amount'], date('jS F, Y', strtotime($eff['d_date'])));
-			$params_header = array(upload_whatsapp_pdf($donation_id));
-			if (send_whatsapp_360($wa_id, 'dana', $params_header, $params_body, $receipt))
-				drupal_set_message(t('Receipt sent on WhatsApp to @to', array('@to' => $eff['d_contact'])) . $fy_note);
-		}
+		$r = donation_whatsapp_send_receipt($donation_id, $receipt);
+		if (!empty($r['success']))
+			drupal_set_message(t('Receipt sent on WhatsApp to @to', array('@to' => $r['to'])) . $fy_note);
+		else
+			drupal_set_message(t('The donation is saved, but the receipt could NOT be sent on WhatsApp@to: @why. You can send it again from the report.',
+				array('@to' => $r['to'] !== '' ? ' to ' . $r['to'] : '', '@why' => $r['msg'])), 'warning');
 	}
 }
 

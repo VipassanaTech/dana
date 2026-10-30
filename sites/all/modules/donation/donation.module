@@ -1937,14 +1937,41 @@ function process_mail_queue()
 {
 	$q = "select d_id from dh_donation where d_deleted=0 and d_mail_queue=1";
 	$hand = db_query($q);
+	$sent = 0;
+	$failed = array();
 	while ( $row = $hand->fetchAssoc() )
 	{
-		if (send_donor_email($row['d_id']))
+		$r = send_donor_email($row['d_id']);
+		if (!empty($r['success']))
 		{
 			db_update('dh_donation')->fields(array('d_mail_queue' => 0))->condition('d_id', $row['d_id'])->execute();
+			$sent++;
 		}
+		else
+			$failed[] = $r;     // stays in the queue for the next run
+	}
+	drupal_set_message(t('Email queue: @n receipt(s) sent.', array('@n' => $sent)));
+	foreach ($failed as $r)
+		drupal_set_message(t('Not sent@to: @why', array('@to' => $r['to'] !== '' ? ' to ' . $r['to'] : '', '@why' => $r['msg'])), 'warning');
+}
 
-	} 
+/**
+ * A short, staff-readable reason from a failed Mailgun call (the API's own message when there is one).
+ */
+function donation_mailgun_error_text($e)
+{
+	$text = '';
+	if (method_exists($e, 'getResponseBody'))
+	{
+		$body = $e->getResponseBody();
+		if (is_array($body) && !empty($body['message']))
+			$text = (string) $body['message'];
+		elseif (is_string($body))
+			$text = $body;
+	}
+	if (trim($text) === '')
+		$text = $e->getMessage();
+	return trim(strip_tags($text));
 }
 
 
@@ -1969,15 +1996,21 @@ function send_donor_email( $id )
     $subject = str_replace(array_keys($replace), array_values($replace), variable_get('email_subject', 'Thank you')) ; 
     $body = str_replace(array_keys($replace), array_values($replace), variable_get('email_template', array('value' => '', 'format' => 'full_html'))['value']) ;
 
+	global $base_url;
+	$to = $row['d_email'];
 	$fname = str_replace('private://', '', $row['d_receipt_email']);
 	if (  substr($fname,0,8) == 'receipts' )
 		$fname = str_replace(array('https://', 'http://', '.dana.vridhamma.org'), '', $base_url)."/".$fname;
     	$data = s3_get_file('vri-dana', $fname, 'file');
+	if (empty($data['success']) || empty($data['data']) || !is_file($data['data']))
+	{
+		watchdog('DanaSendEmail', 'Email to %to not sent: the receipt PDF %f could not be fetched (%m)',
+			array('%to' => $to, '%f' => $fname, '%m' => isset($data['message']) ? $data['message'] : ''), WATCHDOG_ERROR);
+		return array('success' => False, 'msg' => 'the receipt PDF could not be fetched from storage', 'to' => $to);
+	}
 
 	$attachment = array($data['data']);
 	$from = variable_get('donation_from', '').'<'.variable_get('donation_email', '').'>';
-	$mg = Mailgun::create(variable_get('mailgun_key', ''));
-	$to = $row['d_email'];
 
 	$options = array(
 	  'from'    => $from,
@@ -1995,8 +2028,17 @@ function send_donor_email( $id )
 		foreach( $attachment as $a )
 			$options['attachment'][] = array('filePath' => $a, 'filename' => $row['d_receipt_f'].'.pdf');
 	}
-	$res = $mg->messages()->send(get_mailgun_domain($from), $options );
-	$mid = $res->getId();
+	try {
+		$mg = Mailgun::create(variable_get('mailgun_key', ''));
+		$res = $mg->messages()->send(get_mailgun_domain($from), $options );
+		$mid = $res->getId();
+	} catch (\Throwable $e) {
+		$why = donation_mailgun_error_text($e);
+		@unlink($data['data']);           // the temporary copy of the receipt
+		watchdog('DanaSendEmail', 'Email to %to failed: %why', array('%to' => $to, '%why' => $why), WATCHDOG_ERROR);
+		return array('success' => False, 'msg' => $why, 'to' => $to);
+	}
+	@unlink($data['data']);
 	watchdog('DanaSendEmail', "Email sent to ".$row['d_email']." (".$mid.")");
 	return array('success' => True, 'msg' => $mid, 'to' => $to);
 }
@@ -2765,6 +2807,10 @@ function donation_report_form($form, &$form_state)
 							alert("Send Failed" + (data.to ? " (to " + data.to + ")" : "") + ": "+data.msg);
 						dom_a.html(old);
 						return false;
+					},
+					error: function(xhr, status) {
+						alert("Send Failed: the server did not answer properly (" + (xhr.status ? "HTTP " + xhr.status : status) + "). Please try again; if it keeps failing, report it.");
+						dom_a.html(old);
 					}
 				 } );
 				return false;
@@ -4069,20 +4115,28 @@ function download_receipt( $donation_id )
 
 }
 
-function upload_whatsapp_pdf( $donation_id )
+/**
+ * Upload the donation's receipt PDF to WhatsApp (360dialog) and return the media id, or 0.
+ * On failure $error gets a short, staff-readable reason.
+ */
+function upload_whatsapp_pdf( $donation_id, &$error = NULL )
 {
-	$q = "select d_receipt_email from dh_donation where d_id=".$donation_id;
+	global $base_url;
+	$error = '';
+	$q = "select d_receipt_email from dh_donation where d_id=".(int) $donation_id;
 	$f = db_query($q)->fetchField();
 	$fname = str_replace('private://', '', $f);
 	if (  substr($fname,0,8) == 'receipts' )
 		$fname = str_replace(array('https://', 'http://', '.dana.vridhamma.org'), '', $base_url)."/".$fname;
 	$data = s3_get_file('vri-dana', $fname, 'file');
-	if (!$data['success'])
+	if (empty($data['success']) || empty($data['data']) || !is_file($data['data']))
 	{
 		watchdog('S3Debug', print_r($data, true));
-		return 0;		
+		$error = 'the receipt PDF could not be fetched from storage';
+		return 0;
 	}
 
+	$id = 0;
 	try {
 		$curl = curl_init();
 
@@ -4091,7 +4145,8 @@ function upload_whatsapp_pdf( $donation_id )
 		  CURLOPT_RETURNTRANSFER => true,
 		  CURLOPT_ENCODING => '',
 		  CURLOPT_MAXREDIRS => 10,
-		  CURLOPT_TIMEOUT => 0,
+		  CURLOPT_CONNECTTIMEOUT => 10,
+		  CURLOPT_TIMEOUT => 60,
 		  CURLOPT_FOLLOWLOCATION => true,
 		  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
 		  CURLOPT_CUSTOMREQUEST => 'POST',
@@ -4102,15 +4157,102 @@ function upload_whatsapp_pdf( $donation_id )
 		));
 
 		$response = curl_exec($curl);
+		$err = curl_error($curl);
+		$http = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
 		curl_close($curl);
 
-		$ret = json_decode($response);
-		return $ret->id;
+		$ret = json_decode((string) $response);
+		if ($err === '' && is_object($ret) && !empty($ret->id))
+			$id = $ret->id;
+		else
+		{
+			$error = 'the receipt PDF could not be uploaded to WhatsApp: ' . donation_whatsapp_error_text($http, $response, $err);
+			watchdog('upload_whatsapp_pdf', 'Upload of the receipt of donation %d failed: %why', array('%d' => $donation_id, '%why' => $error), WATCHDOG_ERROR);
+		}
 	} catch (\Throwable $e) {
-		watchdog("upload_whatsapp_pdf", "Error uploading $donation_id: ".$e->getMessage());
+		$error = 'the receipt PDF could not be uploaded to WhatsApp: ' . $e->getMessage();
+		watchdog("upload_whatsapp_pdf", "Error uploading $donation_id: ".$e->getMessage(), array(), WATCHDOG_ERROR);
 	}
-	return 0;
-} 
+	@unlink($data['data']);               // the temporary copy of the receipt
+	return $id;
+}
+
+/**
+ * A short, staff-readable reason from a failed WhatsApp (360dialog) call. Handles the answers seen in the logs:
+ * {"error":"This number is blocked ..."}, {"error":{"message":"(#100) Invalid parameter","error_data":{"details":...}}},
+ * {"meta":{"developer_message":"Not Found","http_code":404}} and {"errors":[{"title":...,"details":...}]}.
+ */
+function donation_whatsapp_error_text($http_code, $response, $curl_error = '')
+{
+	if ((string) $curl_error !== '')
+		return 'could not reach the WhatsApp service (' . $curl_error . ')';
+	$j = json_decode((string) $response);
+	$text = '';
+	if (is_object($j))
+	{
+		if (isset($j->error) && is_string($j->error))
+			$text = $j->error;
+		elseif (isset($j->error->message))
+		{
+			$text = preg_replace('/^\(#\d+\)\s*/', '', (string) $j->error->message);
+			if (isset($j->error->error_data->details))
+			{
+				$words = function ($s) { $w = preg_split('/\W+/', strtolower($s), -1, PREG_SPLIT_NO_EMPTY); sort($w); return $w; };
+				if ($words((string) $j->error->error_data->details) != $words($text))
+					$text .= ' (' . $j->error->error_data->details . ')';
+			}
+		}
+		elseif (isset($j->errors[0]))
+			$text = trim((isset($j->errors[0]->title) ? $j->errors[0]->title : '') . (isset($j->errors[0]->details) ? ': ' . $j->errors[0]->details : ''), ': ');
+		elseif (isset($j->meta->developer_message))
+			$text = $j->meta->developer_message;
+	}
+	$text = trim(strip_tags((string) $text));
+	if ($text === '')
+		$text = 'unexpected answer from the WhatsApp service';
+	if ($http_code && $http_code >= 400 && strpos($text, (string) $http_code) === FALSE)
+		$text .= ' (HTTP ' . $http_code . ')';
+	return $text;
+}
+
+/**
+ * Send the donation's receipt on WhatsApp. Returns array('success', 'msg' = message id or the reason it failed, 'to').
+ * Used after saving a donation and by the "Send WhatsApp" link on the report.
+ */
+function donation_whatsapp_send_receipt($donation_id, $receipt_num = NULL)
+{
+	$ret = array('success' => False, 'msg' => '', 'to' => '');
+	$row = donation_effective_donor($donation_id);
+	if (!$row)
+	{
+		$ret['msg'] = 'the donor details of this donation could not be found';
+		return $ret;
+	}
+	$ret['to'] = trim((string) $row['d_contact']);
+	$wa_id = $ret['to'] !== '' ? whatsapp_360_get_waid($ret['to']) : '';
+	if (!$wa_id)
+	{
+		$ret['msg'] = 'there is no mobile number for this donor';
+		return $ret;
+	}
+	$why = '';
+	$media = upload_whatsapp_pdf($donation_id, $why);
+	if (!$media)
+	{
+		$ret['msg'] = $why !== '' ? $why : 'the receipt PDF could not be prepared';
+		return $ret;
+	}
+	$params_body = array($row['d_name'], $row['d_currency'].' '.$row['d_amount'], date('jS F, Y', strtotime($row['d_date'])));
+	$response = send_whatsapp_360($wa_id, 'dana', array($media), $params_body, $receipt_num !== NULL ? $receipt_num : $row['d_receipt_f'], 'template', $why);
+	if ($response)
+	{
+		$ret['success'] = True;
+		$ret['msg'] = $response;
+	}
+	else
+		$ret['msg'] = $why !== '' ? $why : 'WhatsApp did not accept the message';
+	return $ret;
+}
 
 
 function upload_whatsapp_pdf_generic($file)
@@ -4189,27 +4331,19 @@ function send_whatsapp( $donation_id )
 		drupal_json_output($ret);
 		exit(0);
 	}
-	$row = donation_effective_donor($donation_id);
-	$wa_id = $row ? whatsapp_360_get_waid($row['d_contact']) : '';
-	$ret['to'] = $row ? $row['d_contact'] : '';
-	if ($wa_id)
-	{
-		$params_body = array($row['d_name'], $row['d_currency'].' '.$row['d_amount'], date('jS F, Y', strtotime($row['d_date'])));
-		$params_header = array(upload_whatsapp_pdf($donation_id));
-		$response = send_whatsapp_360($wa_id, "dana", $params_header, $params_body, $row['d_receipt_f'] );
-		if ($response)
-		{
-			$ret['success'] = True;
-			$ret['msg'] = $response;
-		}
-
-	}
+	$ret = donation_whatsapp_send_receipt($donation_id);
 	drupal_json_output($ret);
 	exit(0);
 }
 
-function send_whatsapp_360( $to, $template, $params_header, $params_body, $receipt_num, $type = "template")
+/**
+ * Send a WhatsApp template message. Returns the message id, or '' when it failed; then $error gets a short,
+ * staff-readable reason (and the failure is logged).
+ */
+function send_whatsapp_360( $to, $template, $params_header, $params_body, $receipt_num, $type = "template", &$error = NULL)
 {
+    $error = '';
+    $p_header_arr = array();
     $namespace = variable_get('whatsapp_namespace', '');
     $wa_url = variable_get('whatsapp_url', '');
     $wa_api_key = variable_get('whatsapp_key', '');
@@ -4247,20 +4381,30 @@ function send_whatsapp_360( $to, $template, $params_header, $params_body, $recei
         CURLOPT_CUSTOMREQUEST => "POST",
         CURLOPT_POSTFIELDS => $payload,
         CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 30,
     ]);
 
     $response = curl_exec($curl);
     //var_dump($response);
     $err = curl_error($curl);
+    $http = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
     curl_close($curl);
     $ret = '';
 
     if ($err) {
+        $error = donation_whatsapp_error_text($http, $response, $err);
         watchdog('Donation', 'Unable to send Whatsapp: '.$to.' template: '.$template.': '.$err.': '.$response, array(), WATCHDOG_ERROR);
     } else {
 	    watchdog('Whatsapp Response', $response);
-        $ret = json_decode($response)->messages[0]->id;
+        $json = json_decode((string) $response);
+        if (is_object($json) && isset($json->messages[0]->id))
+            $ret = $json->messages[0]->id;
+        else {
+            $error = donation_whatsapp_error_text($http, $response);
+            watchdog('Donation', 'Unable to send Whatsapp: %to template: %t: %why', array('%to' => $to, '%t' => $template, '%why' => $error), WATCHDOG_ERROR);
+        }
     }
     return $ret;
 }
