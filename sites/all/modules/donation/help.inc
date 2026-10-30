@@ -90,9 +90,12 @@ function dana_help_page_visible(array $page, $account = NULL) {
 /**
  * Turns the tokens in a section body into HTML:
  * {help:<page>} or {help:<page>#<section>} = link to that help page; {img:<name>} = help/images/<name>.png;
- * <p class="note"> = a "Note" box.
+ * {tab:<name>} = the name of a top-menu tab as this centre shows it (see dana_help_tab_title()); <p class="note"> = a "Note" box.
  */
 function dana_help_render_body($html) {
+  $html = preg_replace_callback('/\{tab:([a-z0-9]+)\}/', function ($m) {
+    return '<b class="ui">' . check_plain(dana_help_tab_title($m[1])) . '</b>';
+  }, $html);
   $html = preg_replace_callback('/\{help:([a-z0-9-]+)(?:#([a-z0-9-]+))?\}/', function ($m) {
     $pages = dana_help_pages();
     $title = isset($pages[$m[1]]) ? $pages[$m[1]]['title'] : $m[1];
@@ -103,6 +106,26 @@ function dana_help_render_body($html) {
     return '<img class="dana-help-shot" src="' . check_plain($src) . '" alt="' . t('Picture of the screen') . '">';
   }, $html);
   return str_replace('<p class="note">', '<p class="dana-help-note"><b>' . t('Note:') . '</b> ', $html);
+}
+
+/**
+ * The name of a top-menu tab as this centre's menu shows it (a few centres renamed some tabs), else the usual name.
+ * $name: home, report, settings, donors, 10bd, users or help.
+ */
+function dana_help_tab_title($name) {
+  $tabs = array('home' => array('<front>', 'Home'), 'report' => array('donation-report', 'Report'),
+    'settings' => array('admin/donation', 'Settings'), 'donors' => array('donors', 'Donors'),
+    '10bd' => array('income-tax-report', 'Generate 10BD'), 'users' => array('centre-users', 'Users'),
+    'help' => array('help', 'Help'));
+  if (!isset($tabs[$name])) {
+    return $name;
+  }
+  $titles = &drupal_static(__FUNCTION__);
+  if ($titles === NULL) {
+    $titles = db_query("SELECT link_path, link_title FROM {menu_links} WHERE menu_name = 'main-menu' AND plid = 0 AND hidden = 0")->fetchAllKeyed();
+  }
+  $path = $tabs[$name][0];
+  return (isset($titles[$path]) && trim($titles[$path]) !== '') ? $titles[$path] : $tabs[$name][1];
 }
 
 /** Inline CSS (no new .css file, so no cache clear is needed on the sites). */
