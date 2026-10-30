@@ -1084,64 +1084,6 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		'.$a.'
 		var currentForm;
 		var is_edit = '.$is_edit.';
-		var aadhaar_d = [
-		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-		  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
-		  [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
-		  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
-		  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
-		  [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
-		  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
-		  [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
-		  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
-		  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
-		];
-
-		// permutation table p
-		var aadhaar_p = [
-		  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-		  [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
-		  [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
-		  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
-		  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
-		  [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
-		  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
-		  [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]
-		];
-
-		// inverse table inv
-		var aadhaar_inv = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9];
-
-		// converts string or number to an array and inverts it
-		function inv_array(array) 
-		{
-
-			if (Object.prototype.toString.call(array) === "[object Number]") 
-			{
-		    		array = String(array);
-			}
-
-			if (Object.prototype.toString.call(array) === "[object String]") 
-			{
-				array = array.split("").map(Number);
-			}
-
-			return array.reverse();
-		}
-
-		// validates checksum
-		function validate_aadhaar(array) 
-		{
-			var c = 0;
-			var invertedArray = inv_array(array);
-
-			for (var i = 0; i < invertedArray.length; i++) {
-				c = aadhaar_d[c][aadhaar_p[(i % 8)][invertedArray[i]]];
-			}
-
-			return (c === 0);
-		}
-
 
 		function get_positions()
 		{
@@ -1248,62 +1190,33 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 			return res;					
 		}
 
-		function aadhaar_is_valid(aadhaar) 
-		{
-			if (aadhaar == "" || aadhaar.length != 12) 
-				return false;
-
-			if (!/^\d+$/.test(aadhaar)) 
-				return false;
-
-			var regexp=/^[2-9]{1}[0-9]{3}[0-9]{4}[0-9]{4}$/;
-			if( ! regexp.test(aadhaar) )
-				return false;
-
-			if (! validate_aadhaar(aadhaar))
-				return false
-
-			// Aadhaar number is valid
-			return true;
-		}
-
 		function check_id_no()
 		{
 			var res = true;
+			// the number as it will be saved: no spaces, dots or dashes, capital letters (see donation_id_check_js)
+			var idv = DanaId.clean($("#edit-d-id-no").val());
 			if (! $("#edit-d-foreign").is(":checked"))
 			{
 				if ( $("#edit-d-id-type").val() == "99" )
 					return true;
 
-				if ( $("#edit-d-id-no").val() == "" )
+				if ( idv == "" )
 				{
 					alert("'.t("ID No is mandatory").'");
-					$("#edit-d-id-no").focus();				
+					$("#edit-d-id-no").focus();
 					return false;
 				}
-				if ( $("#edit-d-id-type").val() == "1" )
+				var problem = DanaId.problem($("#edit-d-id-type").val(), idv);
+				if ( problem != "" )
 				{
-					var regpan = /^([a-zA-Z]){5}([0-9]){4}([a-zA-Z]){1}?$/;
-					if(regpan.test($("#edit-d-id-no").val()) == false)
-					{
-						res = false;
-						alert("Invalid PAN card no!");
-						$("#edit-d-id-no").focus();
-					}										
-				}
-				else if ( $("#edit-d-id-type").val() == "2" )
-				{
-					if (! aadhaar_is_valid($("#edit-d-id-no").val()))
-					{
-						res = false;
-						alert("Invalid Aadhaar no!");
-						$("#edit-d-id-no").focus();
-					}
+					res = false;
+					alert(problem);
+					$("#edit-d-id-no").focus();
 				}
 			}
 			else
 			{
-				if ( $.trim( $("#edit-d-id-no").val() ) == "" )
+				if ( idv == "" )
 				{
 					res = false;
 					alert("'.t("Passport No is mandatory for Foreign Students").'");
@@ -1469,6 +1382,8 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 
 			// L18: upper-case the ID while typing only (a stored lowercase PAN that is not touched is not a change)
 			$("#edit-d-id-no").bind("input", function () { var p = this.selectionStart; this.value = this.value.toUpperCase(); try { this.setSelectionRange(p, p); } catch (e) {} });
+			// and, once typed or pasted in, drop spaces, dots and dashes when leaving the box
+			DanaId.bind("#edit-d-id-no");
 
 			$("#edit-d-pincode").change(function(){
 				do_pincode($(this).val());
@@ -1564,9 +1479,72 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 	drupal_add_js(drupal_get_path('module', 'donation').'/js/jquery-confirm.min.js');
 	drupal_add_js(drupal_get_path('module', 'donation').'/js/donor-versioning.js');
 	drupal_add_css(drupal_get_path('module', 'donation').'/donation.css');
-	drupal_add_js($js, 'inline');
+	drupal_add_js(donation_id_check_js() . $js, 'inline');
 
 	return $form;
+}
+
+/**
+ * Page script shared by the donation form and the Edit Donor form for the ID No box.
+ *   DanaId.clean(v)        the number as it is saved: no spaces (also invisible ones), dots or dashes; capital letters
+ *                          (the same rule as donor_id_canonical() on the server and the DIPI sync)
+ *   DanaId.problem(t, v)   '' when ID type t accepts v, else a plain message: what is wrong and what to do
+ *   DanaId.bind(selector)  cleans the box when leaving it, but only after the person typed or pasted in it,
+ *                          so an untouched stored number is never counted as a change (L18)
+ * Inline (no separate .js file), so a change needs no CSS/JS cache clear on the sites.
+ */
+function donation_id_check_js()
+{
+	return <<<'JS'
+var DanaId = (function () {
+	var d = [[0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],
+		[5,9,8,7,6,0,4,3,2,1],[6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],[9,8,7,6,5,4,3,2,1,0]];
+	var p = [[0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],[8,9,1,6,0,4,3,5,2,7],
+		[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],[2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]];
+	var PAN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+	function checkDigitOk(v) {
+		var c = 0, r = v.split("").reverse();
+		for (var i = 0; i < r.length; i++) c = d[c][p[i % 8][+r[i]]];
+		return c === 0;
+	}
+	function clean(v) {
+		return String(v == null ? "" : v).replace(/[\s ​-‍⁠﻿.\-]+/g, "").toUpperCase();
+	}
+	function problem(type, v) {
+		type = String(type);
+		if (type === "1") {
+			if (/^[0-9]{12}$/.test(v))
+				return "This looks like an Aadhaar number, not a PAN. Please change ID Type to Aadhaar.";
+			if (!PAN.test(v))
+				return "Invalid PAN card no! A PAN has 10 characters: 5 letters, 4 digits, then 1 letter (for example ABCDE1234F)."
+					+ (v.length !== 10 ? " You typed " + v.length + "." : "");
+		}
+		else if (type === "2") {
+			if (PAN.test(v))
+				return "This looks like a PAN number, not an Aadhaar. Please change ID Type to PAN.";
+			if (/[^0-9]/.test(v))
+				return "Invalid Aadhaar no! An Aadhaar number has only digits. Please remove the letters or other signs.";
+			if (v.length !== 12)
+				return "Invalid Aadhaar no! It must have 12 digits. You typed " + v.length + ".";
+			if (/^[01]/.test(v))
+				return "Invalid Aadhaar no! An Aadhaar number never starts with 0 or 1.";
+			if (!checkDigitOk(v))
+				return "Invalid Aadhaar no! This is not a valid Aadhaar number; one of the digits may be wrong. Please check it with the donor.";
+		}
+		return "";
+	}
+	function bind(selector) {
+		jQuery(selector).on("input", function () { jQuery(this).data("danaTyped", 1); });
+		jQuery(selector).on("blur", function () {
+			if (!jQuery(this).data("danaTyped")) return;
+			var c = clean(this.value);
+			if (c !== this.value) this.value = c;
+		});
+	}
+	return { clean: clean, problem: problem, bind: bind };
+})();
+
+JS;
 }
 
 /**

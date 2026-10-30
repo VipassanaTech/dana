@@ -322,54 +322,21 @@ function donor_form($form, &$form_state, $donor = NULL)
 		var donor_don_count = ' . (int) $don_count . ';
 		var donor_past_fys = ' . drupal_json_encode($past) . ';
 		var donor_freeze = ' . (donation_versioning_freeze_active() ? 1 : 0) . ';
-		var aadhaar_d = [
-		  [0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],
-		  [3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],
-		  [6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],
-		  [9,8,7,6,5,4,3,2,1,0]
-		];
-		var aadhaar_p = [
-		  [0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],
-		  [8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],
-		  [2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]
-		];
-		function inv_array(array) {
-			if (Object.prototype.toString.call(array) === "[object Number]") array = String(array);
-			if (Object.prototype.toString.call(array) === "[object String]") array = array.split("").map(Number);
-			return array.reverse();
-		}
-		function validate_aadhaar(array) {
-			var c = 0;
-			var inverted = inv_array(array);
-			for (var i = 0; i < inverted.length; i++) c = aadhaar_d[c][aadhaar_p[(i % 8)][inverted[i]]];
-			return (c === 0);
-		}
-		function aadhaar_is_valid(aadhaar) {
-			if (aadhaar == "" || aadhaar.length != 12) return false;
-			if (! /^\d+$/.test(aadhaar)) return false;
-			if (! /^[2-9]{1}[0-9]{3}[0-9]{4}[0-9]{4}$/.test(aadhaar)) return false;
-			if (! validate_aadhaar(aadhaar)) return false;
-			return true;
-		}
 		function donor_check_id() {
 			if ($("#edit-d-id-type").val() == "99") return true;
-			if ($.trim($("#edit-d-id-no").val()) == "") {
+			// the number as it will be saved (see donation_id_check_js)
+			var idv = DanaId.clean($("#edit-d-id-no").val());
+			if (idv == "") {
 				alert("ID No is mandatory"); $("#edit-d-id-no").focus(); return false;
 			}
-			if ($("#edit-d-id-type").val() == "1") {
-				var regpan = /^([a-zA-Z]){5}([0-9]){4}([a-zA-Z]){1}?$/;
-				if (regpan.test($("#edit-d-id-no").val()) == false) {
-					alert("Invalid PAN card no!"); $("#edit-d-id-no").focus(); return false;
-				}
-			}
-			else if ($("#edit-d-id-type").val() == "2") {
-				if (! aadhaar_is_valid($("#edit-d-id-no").val())) {
-					alert("Invalid Aadhaar no!"); $("#edit-d-id-no").focus(); return false;
-				}
+			var problem = DanaId.problem($("#edit-d-id-type").val(), idv);
+			if (problem != "") {
+				alert(problem); $("#edit-d-id-no").focus(); return false;
 			}
 			return true;
 		}
 		$(document).ready(function () {
+			DanaId.bind("#edit-d-id-no");
 			$("#edit-d-pincode").on("blur", function () {
 				var code = $.trim($(this).val());
 				if (code == "") return;
@@ -409,7 +376,7 @@ function donor_form($form, &$form_state, $donor = NULL)
 			});
 		});
 	})(jQuery);';
-	drupal_add_js($js, 'inline');
+	drupal_add_js(donation_id_check_js() . $js, 'inline');
 
 	return $form;
 }

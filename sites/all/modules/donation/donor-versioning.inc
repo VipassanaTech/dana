@@ -232,7 +232,8 @@ function donor_effective_dv($donor_id, $fy)
  * THE ONE donor-ID comparator (L18, L21). Two IDs are the same iff their keys are equal.
  *  exact (default): type as int, number byte-exact. Used by the form delta, correction/apply no-op tests, R16x,
  *                   conflict tests; mirrors the trigger's ID compare.
- *  normalised:      number upper-cased with all whitespace removed. ONLY for Donor Master / student-CSV no-op tests.
+ *  normalised:      number as donor_id_canonical() stores it (no spaces, dots or dashes; upper case).
+ *                   ONLY for Donor Master / student-CSV no-op tests.
  * Both modes: type 0 or 99 with an EMPTY number is the one "no ID" value (0/'' == 99/''). 1/'' and ' ' stay distinct (exact).
  */
 function donor_id_key($type, $no, $normalise = FALSE)
@@ -240,7 +241,7 @@ function donor_id_key($type, $no, $normalise = FALSE)
 	$type = (int) $type;
 	$no = (string) $no;
 	if ($normalise)
-		$no = strtoupper(preg_replace('/\s+/u', '', $no));
+		$no = donor_id_canonical($no);
 	if ($no === '' && ($type === 0 || $type === 99))
 		$type = 99;
 	return $type . '|' . $no;
@@ -249,7 +250,9 @@ function donor_id_key($type, $no, $normalise = FALSE)
 /** Canonical form of a TYPED ID number (form input, CSV): upper-case, no whitespace (L18: PAN upper-cased on input). */
 function donor_id_canonical($no)
 {
-	return strtoupper(preg_replace('/\s+/u', '', (string) $no));
+	// No spaces (also no-break and invisible ones), dots or dashes; capital letters. The same rule as the page
+	// script (donation_id_check_js) and the DIPI sync (dipi_id_clean), so a typed "1234 5678-9012" is stored as one number.
+	return strtoupper(preg_replace('/[\s\x{00A0}\x{200B}-\x{200D}\x{2060}\x{FEFF}.\-]+/u', '', (string) $no));
 }
 
 /** A "real" ID for the never-downgrade rule (L19): a 10BD type 1-7 with a non-blank number. */
