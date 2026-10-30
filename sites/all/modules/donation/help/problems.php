@@ -75,14 +75,10 @@ return array(
       'id' => 'forgot',
       'title' => 'I forgot my password',
       'body' => '<ol>'
-        . '<li>Under the <b class="ui">User login</b> box, click <b class="ui">Request new password</b>.</li>'
-        . '<li>Type your username or the email address of your Dana account in <b class="ui">Username or e-mail address</b>.</li>'
-        . '<li>Click <b class="ui">E-mail new password</b>.</li>'
-        . '<li>Open the email from Dana and click the link in it. The link works only once, and only for 24 hours.</li>'
-        . '<li>On the page that opens, click <b class="ui">Log in</b>.</li>'
-        . '<li>Your account page opens. Type a new password in <b class="ui">Password</b> and <b class="ui">Confirm password</b>, then click <b class="ui">Save</b>.</li>'
-        . '</ol>'
-        . '<p>If the email does not come, look in the spam folder. If it is not there, ask the person who manages Dana users at your centre.</p>',
+        . '<li>Ask the person who manages Dana users at your centre. They give you a new temporary password.</li>'
+        . '<li>Log in with your username and the temporary password.</li>'
+        . '<li>Dana asks you to choose your own new password. Follow the password rules above.</li>'
+        . '</ol>',
     ),
     array(
       'id' => 'logged-out',

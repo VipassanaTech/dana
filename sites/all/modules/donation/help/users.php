@@ -60,7 +60,7 @@ return array(
         . '</ol> '
         . '<ul>'
         . '<li>If you change the username, the person logs in with the new one.</li>'
-        . '<li>If you type a new password, it is a temporary one. The person is logged out. '
+        . '<li>If a user forgot their password, type a new password for them. It is a temporary one. The person is logged out. '
         . 'They must choose their own password at the next login.</li>'
         . '<li>If a user has more than one role, Dana shows a warning. Choose the role to keep. Saving removes the others.</li>'
         . '</ul> ',
