@@ -583,3 +583,24 @@ function donation_user_login(&$edit, $account)
 	if (empty($_GET['destination']) && user_access(UA_PERM_MANAGE, $account) && !user_access('access donation', $account))
 		$_GET['destination'] = 'centre-users';
 }
+
+/**
+ * Implements hook_mail_alter(): emails sent from the site address (password reset and other account emails) show
+ * "Dana - <site title>" as the sender name, e.g. "Dana - Dhamma Giri" <dipi@vridhamma.org>, not just the address.
+ */
+function donation_mail_alter(&$message)
+{
+	$addr = variable_get('site_mail', '');
+	if ($addr === '' || $message['from'] !== $addr)
+		return;
+	// Plain ASCII only, no quotes, backslashes or line breaks, so the title cannot change the email header.
+	$title = trim(preg_replace('/\s+/', ' ', str_replace(array('"', '\\'), '', variable_get('site_name', ''))));
+	if ($title === '' || !preg_match('/^[\x20-\x7E]+$/', $title))
+		$name = 'Dana';
+	elseif (stripos($title, 'dana') === 0)
+		$name = $title;                     // e.g. "Dana VSS": no "Dana - Dana VSS"
+	else
+		$name = 'Dana - ' . $title;
+	$message['from'] = '"' . $name . '" <' . $addr . '>';
+	$message['headers']['From'] = $message['from'];
+}
