@@ -313,6 +313,8 @@ function donation_menu()
 
 function adonation_id_load( $id )
 {
+	if (!ctype_digit((string) $id))           // a plain number only (2026-10-30: crafted addresses reached SQL)
+		return FALSE;
 	global $user;
 	$res = false;
 	$query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id)->condition('d_deleted', '0');
@@ -330,6 +332,8 @@ function adonation_id_load( $id )
 // (stamped CANCELLED) and log can still be viewed.
 function receipt_donation_id_load( $id )
 {
+	if (!ctype_digit((string) $id))           // a plain number only (2026-10-30: crafted addresses reached SQL)
+		return FALSE;
 	global $user;
 	$query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id);
 	if (user_access('access own donation') && (!user_access('administer donation')) )
@@ -343,6 +347,8 @@ function receipt_donation_id_load( $id )
 
 function tag_donation_id_load( $id )
 {
+	if (!ctype_digit((string) $id))           // a plain number only (2026-10-30: crafted addresses reached SQL)
+		return FALSE;
   global $user;
   $res = false;
   $query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id);
@@ -359,6 +365,8 @@ function tag_donation_id_load( $id )
 
 function donation_id_load( $id )
 {
+	if (!ctype_digit((string) $id))           // a plain number only (2026-10-30: crafted addresses reached SQL)
+		return FALSE;
 	global $user;
 	$res = false;
 	$query = db_select('dh_donation', 'd')->fields('d', array('d_id'))->condition('d_id', $id)->condition('d_deleted', '0')->condition('d_type', 'razorpay', '<>');
@@ -728,67 +736,64 @@ function donation_report()
 }
 
 
+// Typing lookups of the donation form (country, state, city, pincode). The typed text goes to the database as a
+// placeholder value, never as SQL text (2026-10-30: typed text could change the command).
+function dana_lookup_countries($name)
+{
+	return db_query('SELECT c_name FROM dh_country WHERE c_name LIKE :n ORDER BY c_name',
+		array(':n' => db_like((string) $name) . '%'))->fetchAllKeyed(0, 0);
+}
+
+function dana_lookup_states($name, $country)
+{
+	$code = (string) db_query('SELECT c_code FROM dh_country WHERE c_name = :c', array(':c' => (string) $country))->fetchField();
+	return db_query('SELECT s_name FROM dh_state WHERE s_country = :c AND s_name LIKE :n ORDER BY s_name',
+		array(':c' => $code, ':n' => db_like((string) $name) . '%'))->fetchAllKeyed(0, 0);
+}
+
+function dana_lookup_cities($name, $country, $state)
+{
+	$country_code = (string) db_query('SELECT c_code FROM dh_country WHERE c_name = :c', array(':c' => (string) $country))->fetchField();
+	$state_code = (string) db_query('SELECT s_code FROM dh_state WHERE s_name = :s', array(':s' => (string) $state))->fetchField();
+	return db_query('SELECT c_city FROM dh_city WHERE c_country = :c AND c_state = :s AND c_city LIKE :n ORDER BY c_city',
+		array(':c' => $country_code, ':s' => $state_code, ':n' => db_like((string) $name) . '%'))->fetchAllKeyed(0, 0);
+}
+
+function dana_lookup_pincode($code)
+{
+	$matches = array();
+	$q = 'SELECT co.c_name, s.s_name, ci.c_city FROM dh_pincode p LEFT JOIN dh_city ci ON p.p_city = ci.c_id
+		LEFT JOIN dh_state s ON (ci.c_state = s.s_code AND ci.c_country = s.s_country) LEFT JOIN dh_country co ON ci.c_country = co.c_code
+		WHERE p_code = :code LIMIT 0, 1';
+	foreach (db_query($q, array(':code' => (string) $code)) as $row)
+		$matches[] = array('country' => $row->c_name, 'state' => $row->s_name, 'city' => $row->c_city);
+	return $matches;
+}
+
 function _get_country( $name )
 {
-	$q = 'select c_name from dh_country where c_name like \''.$name.'%\' order by c_name';
-	$return = db_query($q);
-	$matches = array();
-  	foreach ($return as $row) {
-    	$matches[$row->c_name] = $row->c_name;
-  	}
-  	drupal_json_output($matches);  	
-  	exit(0);
+	drupal_json_output(dana_lookup_countries($name));
+	exit(0);
 }
 
 function _get_state( $name )
 {
-	$country = $_REQUEST['country'];
-	$country_code = db_query("select c_code from dh_country WHERE c_name='$country'")->fetchField();
-	$q = 'select s_name from dh_state where s_country=\''.$country_code.'\' and  s_name like \''.$name.'%\' order by s_name';
-	$return = db_query($q);
-	$matches = array();
-  	foreach ($return as $row) {
-    	$matches[$row->s_name] = $row->s_name;
-  	}
-  	drupal_json_output($matches);  	
-  	exit(0);
+	drupal_json_output(dana_lookup_states($name, isset($_REQUEST['country']) ? $_REQUEST['country'] : ''));
+	exit(0);
 }
 
 function _get_city( $name )
 {
-	$country = $_REQUEST['country'];
-	$country_code = db_query("select c_code from dh_country WHERE c_name='$country'")->fetchField();
-
-	$state = $_REQUEST['state'];
-	$state_code = db_query("select s_code from dh_state WHERE s_name='$state'")->fetchField();
-
-	$q = 'select c_city from dh_city where c_country=\''.$country_code.'\' and c_state=\''.$state_code.'\' and  c_city like \''.$name.'%\' order by c_city';
-	$return = db_query($q);
-	$matches = array();
-  	foreach ($return as $row) {
-    	$matches[$row->c_city] = $row->c_city;
-  	}
-  	drupal_json_output($matches);  
-  	exit(0);	
+	drupal_json_output(dana_lookup_cities($name, isset($_REQUEST['country']) ? $_REQUEST['country'] : '', isset($_REQUEST['state']) ? $_REQUEST['state'] : ''));
+	exit(0);
 }
-
 
 function _get_location_from_pincode()
 {
-	$code = $_REQUEST['code'];
-	$matches = array();
-	$q = "select co.c_name,s.s_name,ci.c_city from dh_pincode p left join dh_city ci on p.p_city=ci.c_id left join 
-		dh_state s on (ci.c_state=s.s_code and ci.c_country=s.s_country) left join dh_country co on ci.c_country=co.c_code where 
-		p_code='$code' limit 0,1";
-	$return = db_query($q);
-
-  	foreach ($return as $row) {
-    	$matches[] = array( 'country' => $row->c_name, 'state' => $row->s_name, 'city' => $row->c_city );
-  	}
-
-  	drupal_json_output($matches);  	
-  	exit(0);
+	drupal_json_output(dana_lookup_pincode(isset($_REQUEST['code']) ? $_REQUEST['code'] : ''));
+	exit(0);
 }
+
 
 function _get_donor_detail()
 {
@@ -874,6 +879,14 @@ function _get_positions()
 }
 
 
+/** The type of a course, by its number; '' when the number is not a plain number or not found. */
+function dana_course_type($course)
+{
+	if (!ctype_digit((string) $course) || (int) $course <= 0)
+		return '';
+	return (string) db_query('SELECT c_type FROM dh_course WHERE c_id = :c', array(':c' => (int) $course))->fetchField();
+}
+
 function _get_donors( $name )
 {
 	$course = '';
@@ -884,7 +897,7 @@ function _get_donors( $name )
   	$query->condition('d.d_deleted', 0);
         $course_type = '';
         if ( $course > 0)
-           $course_type = db_query("select c_type from dh_course where c_id='$course'")->fetchField();
+           $course_type = dana_course_type($course);
 
   	// Select rows that match the string
   	if ( ($course > 0) && ($course_type <> '1 Day Course')  ) //in_array($course_type, array('10-day', '3-day', 'Executives', '2-day'))
@@ -4191,12 +4204,12 @@ function whatsapp_360_get_waid( $to )
 function view_log_form( $form, &$form_state, $donation_id )
 {
 	//drupal_set_message("Got Don id  $donation_id");
-	$q = "select d_receipt_f from dh_donation where d_id=$donation_id";
-	$receipt_num = db_query($q)->fetchField();
+	$donation_id = (int) $donation_id;                // values go to the database as placeholders, never as SQL text
+	$receipt_num = db_query('SELECT d_receipt_f FROM dh_donation WHERE d_id = :d', array(':d' => $donation_id))->fetchField();
 	drupal_set_title('Log Details for Receipt '.$receipt_num);
 	// "Receipt archived" rows (P1 archive copies) stay in dh_log for admins but are not shown to centres
-	$q = "select l_msg, l_tstamp, u.name from dh_log l left join users u on (l.l_user=u.uid) where l.l_identifier = $donation_id and l_module='dh_donation' and not (l.l_event <=> 'Receipt archived')";
-	$hand = db_query($q);
+	$hand = db_query("SELECT l_msg, l_tstamp, u.name FROM dh_log l LEFT JOIN users u ON (l.l_user = u.uid) WHERE l.l_identifier = :d AND l_module = 'dh_donation' AND NOT (l.l_event <=> 'Receipt archived')",
+		array(':d' => $donation_id));
 	$rows = array();
 	while( $row = $hand->fetchAssoc())
 	{
@@ -4210,6 +4223,32 @@ function view_log_form( $form, &$form_state, $donation_id )
 	return $form;
 }
 
+
+/** Adds the tags that do not exist yet (typed names are stored as text). Returns how many were added. */
+function dana_tags_create(array $names)
+{
+	$added = 0;
+	foreach ($names as $name)
+	{
+		$name = trim((string) $name);
+		if ($name === '')
+			continue;
+		$added += (int) db_query('INSERT IGNORE INTO dh_tag (t_tag) VALUES (:t)', array(':t' => $name), array('return' => Database::RETURN_AFFECTED));
+	}
+	return $added;
+}
+
+/** Puts tags on donations; only plain numbers are used. Returns how many links were added. */
+function dana_tags_assign(array $donation_ids, array $tag_ids)
+{
+	$added = 0;
+	foreach ($donation_ids as $d)
+		foreach ($tag_ids as $t)
+			if (ctype_digit((string) $d) && ctype_digit((string) $t))
+				$added += (int) db_query('INSERT IGNORE INTO dh_donation_tag (dt_donation, dt_tag) VALUES (:d, :t)',
+					array(':d' => (int) $d, ':t' => (int) $t), array('return' => Database::RETURN_AFFECTED));
+	return $added;
+}
 
 function update_tags()
 {
@@ -4243,14 +4282,7 @@ function update_tags()
 
   if($action == "create")
   {
-    $q = "insert ignore into dh_tag (t_tag) values ";
-    foreach($tags as $tag)
-    {
-      $q .= " ('$tag'), ";
-    }
-
-    $q = rtrim($q, ", ");
-    db_query($q);
+    dana_tags_create($tags);
 
     $out['msg'] ="Tags ".implode(', ', $tags)." created.";
   }
@@ -4328,18 +4360,7 @@ function update_don_tags()
 
   if($action == "assign")
   {
-    $q = "insert ignore into dh_donation_tag (dt_donation, dt_tag) values ";
-    foreach($donations as $donation_id => $donation_receipt_num)
-    {
-      foreach($tags as $tag_id => $tag_name)
-      {
-        $q .= " ('$donation_id', '$tag_id'), ";
-      }
-    }
-
-
-    $q = rtrim($q, ", ");
-    db_query($q);
+    dana_tags_assign(array_keys($donations), array_keys($tags));
 
     $out['msg'] ="Tags ".implode(', ', $tags)." assigned to Donations ".implode(', ', $donations);
   }
