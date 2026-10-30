@@ -171,7 +171,7 @@ function donor_search_form($form, &$form_state)
 			if ($total_donations > 0)
 				$actions[] = '<span class="donor-delete-blocked" title="' . t('Has mapped donations') . '">' . t('Delete') . '</span>';
 			else
-				$actions[] = l(t('Delete'), 'donors/delete/' . $r->d_id, array('attributes' => array('class' => array('donor-delete'), 'onclick' => 'return confirm("Delete this donor?");')));
+				$actions[] = l(t('Delete'), 'donors/delete/' . $r->d_id, array('attributes' => array('class' => array('donor-delete'))));
 		}
 
 		// Donation count links to the donations page only for edit users.
@@ -546,30 +546,57 @@ function donor_donations($donor)
  * Soft-delete a donor. Blocked when ANY donation (including cancelled) is
  * mapped. Sets d_deleted = 1, d_deleted_by = uid.
  */
+/**
+ * Donors > Delete: a confirm page (2026-10-30). Opening the address only asks; the donor is hidden only by the page's
+ * form, which carries Drupal's security code, so a link or page elsewhere cannot delete donors.
+ */
 function donor_delete($donor)
 {
-	global $user;
-
 	if (!$donor) {
 		drupal_set_message(t('Donor not found.'), 'error');
 		drupal_goto('donors');
 	}
+	return drupal_get_form('donor_delete_confirm', $donor);
+}
 
-	$count = (int) db_query("SELECT COUNT(*) FROM dh_donation WHERE d_donor = :id",
-		array(':id' => $donor['d_id']))->fetchField();
+function donor_delete_donation_count($donor_id)
+{
+	return (int) db_query('SELECT COUNT(*) FROM dh_donation WHERE d_donor = :id', array(':id' => (int) $donor_id))->fetchField();
+}
+
+function donor_delete_confirm($form, &$form_state, $donor)
+{
+	$count = donor_delete_donation_count($donor['d_id']);
 	if ($count > 0) {
 		drupal_set_message(t('Cannot delete donor %name: @n donation(s) are mapped to this donor.',
 			array('%name' => $donor['d_name'], '@n' => $count)), 'error');
-		drupal_goto('donors');
+		$form['back'] = array('#markup' => '<p>' . l(t('Back to the donors list'), 'donors') . '</p>');
+		return $form;
 	}
+	$form['d_id'] = array('#type' => 'value', '#value' => (int) $donor['d_id']);
+	$form['d_name'] = array('#type' => 'value', '#value' => $donor['d_name']);
+	return confirm_form($form, t('Delete donor %name?', array('%name' => $donor['d_name'])), 'donors',
+		t('Dana will hide this donor from the donors list and the donation form. Their details stay in the records.'),
+		t('Delete'), t('Cancel'));
+}
 
+function donor_delete_confirm_submit($form, &$form_state)
+{
+	global $user;
+	$id = (int) $form_state['values']['d_id'];
+	$name = $form_state['values']['d_name'];
+	$form_state['redirect'] = 'donors';
+	$count = donor_delete_donation_count($id);
+	if ($count > 0) {                                   // a donation was added in the meantime
+		drupal_set_message(t('Cannot delete donor %name: @n donation(s) are mapped to this donor.', array('%name' => $name, '@n' => $count)), 'error');
+		return;
+	}
 	db_update('dh_donor')
 		->fields(array('d_deleted' => 1, 'd_deleted_by' => $user->uid))
-		->condition('d_id', $donor['d_id'])
+		->condition('d_id', $id)
+		->condition('d_deleted', 0)
 		->execute();
-
-	drupal_set_message(t('Donor %name deleted.', array('%name' => $donor['d_name'])));
-	drupal_goto('donors');
+	drupal_set_message(t('Donor %name deleted.', array('%name' => $name)));
 }
 
 /**

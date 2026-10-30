@@ -144,12 +144,12 @@ return array(
         . '<ol>'
         . '<li>Find the donor in the donors list.</li>'
         . '<li>Click <b class="ui">Delete</b> in the <b class="ui">Actions</b> column.</li>'
-        . '<li>Dana asks <i>Delete this donor?</i> Click OK.</li>'
+        . '<li>A page asks <i>Delete donor ...?</i> with the donor\'s name. Check the name, then click <b class="ui">Delete</b>. To go back without deleting, click <b class="ui">Cancel</b>.</li>'
         . '</ol>'
         . '<p>Dana says the donor was deleted. The donor is no longer in the list.</p> '
         . '<p>If the donor has donations, <b class="ui">Delete</b> is plain text, not a link.'
         . ' Point the mouse at it to see <b class="ui">Has mapped donations</b>.</p> '
-        . '<p class="note">Check the name before you click OK. There is no undo on the screen.</p> ',
+        . '<p class="note">Check the name before you click Delete. There is no undo on the screen.</p> ',
     ),
   ),
 );
