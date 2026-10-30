@@ -573,20 +573,31 @@ function ua_log_page()
  * G. Login landing
  * ====================================================================== */
 
-/** Implements hook_user_login(): a User Admin without donation access lands on the Users page (front page is 'donation'). */
+/** Implements hook_user_login(): people who cannot enter donations land on a page they can use (front page is 'donation'). */
 function donation_user_login(&$edit, $account)
 {
 	// Not after a password reset link: Drupal must open the account page with its reset token,
 	// so the person can set a new password without the old one.
 	if (arg(0) === 'user' && arg(1) === 'reset')
 		return;
-	if (!user_access(UA_PERM_MANAGE, $account) || user_access('access donation', $account))
+	if (user_access('access donation', $account))
 		return;
 	// The login box sends people back to the page it was on, which on the front page is the donation form:
-	// closed to a User Admin without donation access, so send them to the Users page instead.
+	// closed to people who cannot enter donations (e.g. Auditor, User Admin only), so send them to a page they can use.
 	$dest = isset($_GET['destination']) ? trim((string) $_GET['destination'], '/') : '';
 	if (in_array($dest, array('', '<front>', 'donation', variable_get('site_frontpage', 'node')), TRUE))
-		$_GET['destination'] = 'centre-users';
+		$_GET['destination'] = donation_landing_page($account);
+}
+
+/** The first page this person can open, in this order; the front page (donation form) needs 'access donation'. */
+function donation_landing_page($account)
+{
+	$pages = array('donation' => 'access donation', 'donation-report' => 'access donation report', 'donors' => 'view donors',
+		'income-tax-report' => 'access income tax report', 'centre-users' => UA_PERM_MANAGE, 'admin/donation' => 'administer donation');
+	foreach ($pages as $path => $right)
+		if (user_access($right, $account))
+			return $path;
+	return 'user';
 }
 
 /**
