@@ -580,7 +580,12 @@ function donation_user_login(&$edit, $account)
 	// so the person can set a new password without the old one.
 	if (arg(0) === 'user' && arg(1) === 'reset')
 		return;
-	if (empty($_GET['destination']) && user_access(UA_PERM_MANAGE, $account) && !user_access('access donation', $account))
+	if (!user_access(UA_PERM_MANAGE, $account) || user_access('access donation', $account))
+		return;
+	// The login box sends people back to the page it was on, which on the front page is the donation form:
+	// closed to a User Admin without donation access, so send them to the Users page instead.
+	$dest = isset($_GET['destination']) ? trim((string) $_GET['destination'], '/') : '';
+	if (in_array($dest, array('', '<front>', 'donation', variable_get('site_frontpage', 'node')), TRUE))
 		$_GET['destination'] = 'centre-users';
 }
 
