@@ -293,6 +293,7 @@ function ua_list_page()
 			$u->status ? t('Active') : t('Blocked'), $u->access ? format_date($u->access, 'short') : t('Never'), $actions);
 	}
 	return array(
+		'help' => array('#markup' => dana_help_link('users')),
 		'filter' => drupal_get_form('ua_list_filter_form'),
 		'table' => array('#theme' => 'table', '#header' => $header, '#rows' => $rows, '#empty' => t('No users found.')),
 		'pager' => array('#theme' => 'pager'),

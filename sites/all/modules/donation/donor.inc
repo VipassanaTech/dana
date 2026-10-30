@@ -60,6 +60,7 @@ function donor_search_form($form, &$form_state)
 
 	$form['#method'] = 'get';
 	$form['#token'] = FALSE;
+	$form['dana_help'] = array('#markup' => dana_help_link('donors'), '#weight' => -100);
 
 	$form['name']    = array('#type' => 'textfield', '#title' => t('Name'),   '#size' => 20, '#default_value' => $name);
 	$form['email']   = array('#type' => 'textfield', '#title' => t('Email'),  '#size' => 20, '#default_value' => $email);
@@ -225,6 +226,7 @@ function donor_form($form, &$form_state, $donor = NULL)
 	};
 
 	$form['#attributes'] = array('class' => array('donor-form'));
+	$form['dana_help'] = array('#markup' => dana_help_link('donors', 'edit'), '#weight' => -100);
 
 	$form['d_id'] = array('#type' => 'hidden', '#value' => $donor['d_id']);
 	// M4: what this form showed (fy 0 = the current record); checked in donor_form_validate()

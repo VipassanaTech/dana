@@ -162,5 +162,5 @@ function dana_help_link($key, $section = '') {
   if ($section !== '') {
     $options['fragment'] = $section;
   }
-  return '<div class="dana-help-link">' . l(t('Help'), 'help/' . $key, $options) . '</div>';
+  return '<div class="dana-help-link">' . l(t('Help for this page'), 'help/' . $key, $options) . '</div>';
 }
