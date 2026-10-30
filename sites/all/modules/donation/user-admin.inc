@@ -590,6 +590,28 @@ function donation_user_login(&$edit, $account)
 		$_GET['destination'] = donation_landing_page($account);
 }
 
+/** Implements hook_init(): the Home tab (front page = donation form) takes people who cannot enter donations to a page they can use. */
+function donation_init()
+{
+	global $user;
+	if (drupal_is_cli() || $_SERVER['REQUEST_METHOD'] !== 'GET')
+		return;
+	$to = donation_home_redirect($user, current_path());
+	if ($to !== NULL)
+	{
+		unset($_GET['destination']);       // drupal_goto() would follow it back to the front page
+		drupal_goto($to);
+	}
+}
+
+/** Where the front page should send this person instead, or NULL to stay. */
+function donation_home_redirect($account, $path)
+{
+	if (empty($account->uid) || $path !== 'donation' || user_access('access donation', $account))
+		return NULL;
+	return donation_landing_page($account);
+}
+
 /** The first page this person can open, in this order; the front page (donation form) needs 'access donation'. */
 function donation_landing_page($account)
 {
