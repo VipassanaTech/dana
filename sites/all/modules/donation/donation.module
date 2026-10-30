@@ -2507,7 +2507,7 @@ function donation_report_form($form, &$form_state)
 			u.name AS 'CreatedBy', d.d_created AS 'Created On', CONCAT(ud.name, '||', d.d_deleted_date) AS 'Extra'
 			FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id" . donation_donor_fy_join('d') . "
 			LEFT JOIN users u ON d.d_createdBy = u.uid LEFT JOIN dh_course c ON d.d_course = c.c_id
-			LEFT JOIN users ud ON d.d_deleted_by = ud.uid LEFT JOIN dh_donation_tag dt ON d.d_id = dt.dt_donation
+			LEFT JOIN users ud ON d.d_deleted_by = ud.uid
 			WHERE d.d_id > 0" . donation_report_where($wdata, TRUE, 'num_or_f', $args) . "
 			ORDER BY d.d_date DESC, d.d_receipt_f DESC";
 		$result = db_query($q, $args);
@@ -3217,7 +3217,6 @@ function download_donor_master($params)
 	$q = "SELECT DISTINCT don.d_id AS 'Donor ID', don.d_name AS 'Name', don.d_contact AS 'Mobile', don.d_email AS 'Email',
 		don.d_id_type AS 'it_code', it.it_name AS 'ID Type', don.d_id_no AS 'ID No'
 		FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id LEFT JOIN users u ON d.d_createdBy = u.uid
-		LEFT JOIN dh_donation_tag dt ON d.d_id = dt.dt_donation
 		LEFT JOIN dh_id_types it ON (don.d_id_type = it.it_code)
 		WHERE d.d_id > 0 AND d.d_deleted = '0' AND don.d_id IS NOT NULL" . donation_report_where($params, FALSE, 'num_or_f', $args) . "
 		ORDER BY don.d_name, don.d_id";
@@ -3322,7 +3321,7 @@ function donation_report_xls()
 		LEFT JOIN users u ON d.d_createdBy = u.uid
 		LEFT JOIN dh_city ci ON don.d_city = ci.c_id LEFT JOIN dh_state st ON (don.d_state = st.s_code AND don.d_country = st.s_country)
 		LEFT JOIN dh_country cy ON don.d_country = cy.c_code LEFT JOIN dh_course c ON d.d_course = c.c_id
-		LEFT JOIN dh_donation_tag dt ON d.d_id = dt.dt_donation LEFT JOIN dh_id_types dit ON dit.it_code = don.d_id_type
+		LEFT JOIN dh_id_types dit ON dit.it_code = don.d_id_type
 		WHERE d.d_deleted = '0'" . donation_report_where($wdata, TRUE, 'id', $args) . "
 		ORDER BY d.d_created DESC";
 

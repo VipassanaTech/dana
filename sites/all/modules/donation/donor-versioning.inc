@@ -1063,7 +1063,8 @@ function donation_report_where(array $p, $versioned, $receipt_mode, array &$args
     $args[':itype'] = (int) $v('id_type');
   }
   if (is_array($v('txn_type')) && $v('txn_type')) { $w .= ' AND d.d_type IN (:txn_types)'; $args[':txn_types'] = array_values($v('txn_type')); }
-  if (is_array($v('don_tags')) && $v('don_tags')) { $w .= ' AND dt.dt_tag IN (:don_tags)'; $args[':don_tags'] = array_values($v('don_tags')); }
+  // a donation with any of the chosen tags, listed once however many tags it has (2026-10-30)
+  if (is_array($v('don_tags')) && $v('don_tags')) { $w .= ' AND EXISTS (SELECT 1 FROM dh_donation_tag dtf WHERE dtf.dt_donation = d.d_id AND dtf.dt_tag IN (:don_tags))'; $args[':don_tags'] = array_values($v('don_tags')); }
   if ((string) $v('course') !== '') { $w .= ' AND d.d_course = :course'; $args[':course'] = (int) $v('course'); }
   $rc = (string) $v('receipt');
   if ($rc !== '') {
