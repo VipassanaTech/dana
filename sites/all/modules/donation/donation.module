@@ -13,6 +13,7 @@ require_once('donor-versioning.inc');
 require_once('user-admin.inc');
 require_once('id-rules.inc');
 require_once('upload-check.inc');
+require_once('help.inc');
 define('RECEPIT_PREFIX', 'ER-');
 define('DONATION_DONORVER_CODE', 3);                 // read by the phase-C runner (M10 code-version gate)
 define('DONATION_DONORVER_REQUIRE_FREEZE', TRUE);    // TRUE since 2026-10-21 (phase 3 on every site): writes refused if the freeze trigger is missing (M9); set FALSE before a planned rollback (E1)
@@ -284,6 +285,20 @@ function donation_menu()
 	     'page callback' => 'ua_status_page',
 	     'page arguments' => array(1),
 	     'access arguments' => array(UA_PERM_MANAGE),
+	     'type' => MENU_CALLBACK);
+
+	// Help section (spec 2026-10-30): pages in help/, each shown only to people who can use that part, see help.inc
+	$items['help'] = array( 'title' => t('Help'),
+	     'page callback' => 'dana_help_index_page',
+	     'access callback' => 'user_is_logged_in',
+	     'menu_name' => 'main-menu',
+	     'weight' => 20,
+	     'type' => MENU_NORMAL_ITEM);
+
+	$items['help/%'] = array( 'title' => t('Help'),
+	     'page callback' => 'dana_help_page',
+	     'page arguments' => array(1),
+	     'access callback' => 'user_is_logged_in',
 	     'type' => MENU_CALLBACK);
 
 	return $items;
