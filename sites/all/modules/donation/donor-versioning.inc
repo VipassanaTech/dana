@@ -1608,31 +1608,3 @@ function donation_reprint_batch_finished($success, $results, $operations)
 		drupal_set_message(t('@n receipt(s) were not reprinted (storage error). Please try again later.', array('@n' => $failed)), 'error');
 }
 
-/** F13: the Donor Master upload report (one message). */
-function donor_master_report(array $rep)
-{
-	$out = array(t('Donor Master upload: @u updated, @e not edited since download, @s already the same.',
-		array('@u' => $rep['updated'], '@e' => $rep['unedited'], '@s' => $rep['unchanged'])));
-	$labels = array(
-		'kept' => t('Existing ID kept (an upload never removes an ID; use the Donors page)'),
-		'conflict' => t('Changed by someone else after the download, not overwritten (download again)'),
-		'unmatched' => t('No matching donor'),
-		'ambiguous' => t('More than one donor has this name + contact + email'),
-		'identity' => t('Donor ID belongs to another name, skipped'),
-		'type' => t('Unknown ID type (use PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card or No ID)'),
-		'format' => t('ID number not valid for its type'),
-		'failed' => t('Could not be saved (error logged)'));
-	foreach ($labels as $k => $label)
-		if (!empty($rep[$k]))
-			$out[] = $label . ' (' . count($rep[$k]) . '): ' . check_plain(implode('; ', array_slice($rep[$k], 0, 20))) . (count($rep[$k]) > 20 ? ' ...' : '');
-	if ($rep['updated_ids'] && donation_in_apr_may())
-	{
-		$prev = donation_cur_fy() - 1;
-		$n = (int) db_query('SELECT COUNT(DISTINCT d_donor) FROM dh_donation WHERE d_fy = :f AND d_donor IN (:ids)',
-			array(':f' => $prev, ':ids' => $rep['updated_ids']))->fetchField();
-		if ($n)
-			$out[] = t('@n of the updated donors have FY @f donations. FY @f keeps the IDs it had when it closed on 31 March, so its Form 10BD does not show these changes yet. Review them on the Income Tax 10BD page (FY @f review list) and apply where needed.',
-				array('@n' => $n, '@f' => donation_fy_label($prev)));
-	}
-	return implode('<br>', $out);
-}

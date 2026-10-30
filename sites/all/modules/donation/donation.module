@@ -11,6 +11,8 @@ include_once "font.inc";
 include_once "donor.inc";
 require_once('donor-versioning.inc');
 require_once('user-admin.inc');
+require_once('id-rules.inc');
+require_once('upload-check.inc');
 define('RECEPIT_PREFIX', 'ER-');
 define('DONATION_DONORVER_CODE', 3);                 // read by the phase-C runner (M10 code-version gate)
 define('DONATION_DONORVER_REQUIRE_FREEZE', TRUE);    // TRUE since 2026-10-21 (phase 3 on every site): writes refused if the freeze trigger is missing (M9); set FALSE before a planned rollback (E1)
@@ -138,6 +140,11 @@ function donation_menu()
 	     'page arguments' => array('donation_upload_form'),
 	     'page callback' => 'drupal_get_form',
 	     'access arguments' => array('administer donation'));
+
+	$items['admin/upload-csv/template'] = array( 'title' => t('Student list template'),
+	     'page callback' => 'donation_csv_template',
+	     'access arguments' => array('administer donation'),
+	     'type' => MENU_CALLBACK);
 
 	$items['admin/upload-donor-master'] = array( 'title' => t('Upload Donor Master'),
 	     'page arguments' => array('donation_donor_upload_form'),
@@ -1502,6 +1509,8 @@ var DanaId = (function () {
 	var p = [[0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],[8,9,1,6,0,4,3,5,2,7],
 		[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],[2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]];
 	var PAN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+	var PAN_OK = /^[A-Z]{3}[PCHFATBLJG][A-Z][0-9]{4}[A-Z]$/;     // 4th letter = holder type (same rule as id-rules.inc)
+	var OTHER = {"4": "Passport", "5": "Voter ID", "6": "Driving License", "7": "Ration Card"};
 	function checkDigitOk(v) {
 		var c = 0, r = v.split("").reverse();
 		for (var i = 0; i < r.length; i++) c = d[c][p[i % 8][+r[i]]];
@@ -1516,8 +1525,10 @@ var DanaId = (function () {
 			if (/^[0-9]{12}$/.test(v))
 				return "This looks like an Aadhaar number, not a PAN. Please change ID Type to Aadhaar.";
 			if (!PAN.test(v))
-				return "Invalid PAN card no! A PAN has 10 characters: 5 letters, 4 digits, then 1 letter (for example ABCDE1234F)."
+				return "Invalid PAN card no! A PAN has 10 characters: 5 letters, 4 digits, then 1 letter (for example ABCPE1234F)."
 					+ (v.length !== 10 ? " You typed " + v.length + "." : "");
+			if (!PAN_OK.test(v))
+				return "Invalid PAN card no! This is not a valid PAN: its 4th letter must be one of P, C, H, F, A, T, B, L, J or G. Please check it with the donor.";
 		}
 		else if (type === "2") {
 			if (PAN.test(v))
@@ -1530,6 +1541,12 @@ var DanaId = (function () {
 				return "Invalid Aadhaar no! An Aadhaar number never starts with 0 or 1.";
 			if (!checkDigitOk(v))
 				return "Invalid Aadhaar no! This is not a valid Aadhaar number; one of the digits may be wrong. Please check it with the donor.";
+		}
+		else if (OTHER[type]) {
+			if (PAN_OK.test(v))
+				return "This looks like a PAN number, not a " + OTHER[type] + ". Please change ID Type to PAN.";
+			if (/^[2-9][0-9]{11}$/.test(v) && checkDigitOk(v))
+				return "This looks like an Aadhaar number, not a " + OTHER[type] + ". Please change ID Type to Aadhaar.";
 		}
 		return "";
 	}
@@ -3458,378 +3475,90 @@ function donation_report_xls()
 }
 
 
+// Upload CSV (course and student list) and Upload Donor Master (bulk ID correction): two steps, see upload-check.inc.
+// Step 1 checks the whole file and writes nothing; step 2 ("Use this file") is offered only when the file has no problems.
 function donation_upload_form($form, &$form_state)
 {
-	$form['upload'] = array(
-	    '#type' => 'file',
-	    '#title' => t('CSV File'),
-	    '#description' => t('Course/Student data in CSV format'),
-	);
-	$form['submit'] = array('#type' => 'submit', '#value' => 'Upload');
+	if (isset($form_state['storage']['check']))
+	{
+		dana_upload_review($form, $form_state['storage']['check'], 'csv');
+		return $form;
+	}
+	$form['intro'] = array('#markup' => '<p>' . t('Add the students of a course to Dana, so they can be found on the donation form. '
+		. 'Use the template: one line for each student, with the 14 columns in the same order.') . ' '
+		. l(t('Download the template'), 'admin/upload-csv/template') . '</p><p>'
+		. t('Dana first checks the whole file and shows every problem. Nothing is changed until the file has no problems and you click Use this file.') . '</p>');
+	$form['upload'] = array('#type' => 'file', '#title' => t('CSV File'), '#description' => t('Course/Student data in CSV format'));
+	$form['check'] = array('#type' => 'submit', '#value' => t('Check file'), '#validate' => array('dana_upload_file_validate'),
+		'#submit' => array('donation_csv_check_submit'));
 	$form['#attributes']['enctype'] = 'multipart/form-data';
 	return $form;
 }
 
-function donation_upload_form_validate($form, &$form_state)
+function donation_csv_check_submit($form, &$form_state)
 {
-	$file = file_save_upload('upload', array(
-		'file_validate_extensions' => array('csv'),
-	));
-	if ($file)
+	$file = $form_state['values']['upload'];
+	$form_state['storage'] = array('uri' => $file->uri, 'check' => donation_csv_check($file->uri));
+	$form_state['rebuild'] = TRUE;
+}
+
+function donation_csv_use($form, &$form_state)
+{
+	$res = donation_csv_check($form_state['storage']['uri']);      // checked again just before it is used
+	if ($res['errors'])
 	{
-		if ($file = file_move($file, 'private://')) {
-			$form_state['values']['upload'] = $file;
-		}
-		else {
-			form_set_error('upload', t('Failed to write the uploaded file the sites private folder.'));
-		}		
+		$form_state['storage']['check'] = $res;
+		$form_state['rebuild'] = TRUE;
+		return;
 	}
+	drupal_set_message(donation_csv_apply($res));
+	$form_state['storage'] = array();
+	$form_state['rebuild'] = TRUE;
 }
-
-function donation_upload_form_submit($form, &$form_state)
-{
-	$file=$form_state['values']['upload'];
-	unset($form_state['values']['upload']);
-	$file->status = FILE_STATUS_PERMANENT;
-	file_save($file);
-	//$f = file_stream_wrapper_get_instance_by_uri('private://')->getDirectoryPath()."/".$file->filename;
-	$row = 1;
-	drupal_set_message(process_csv($file->uri));
-	//drupal_set_message("File is ".$file->filename);
-}
-
-function process_csv( $csv )
-{
-	if (!donation_versioning_ready())   // the import updates dh_donor (same guard as process_donor_csv)
-		return t('Donor versioning is not completely installed on this site; nothing was uploaded.');
-	$buffer = 100;
-	$processed = 0;
-	$row = 0;
-	//drupal_set_message("I am called $csv");
-	$q = "select LOWER(it_name), it_code  from dh_id_types";
-	$it_types = db_query($q)->fetchAllKeyed();
-	if (($handle = fopen($csv, "r")) !== FALSE) 
-	{
-		$courses = array();	
-		$students = array();
-	    	while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) 
-	    	{
-			$row++;
-			// Ignore first row
-	    		if ($row == 1)
-	    			continue;
-			if (count($data) < 14)
-				continue;
-			$courses[$data[0]."||".$data[1]] = $data[2];
-			$students[] = array( 'course' => $data[0]."||".$data[1], 'n' => $data[3], 'g' => $data[4], 'a' => $data[5], 'p' => $data[6], 'c' => $data[7], 
-				'e' => $data[8], 'co' => $data[9], 'st' => $data[10], 'ci' => $data[11], 'i' => $data[12],
-				'it' => isset($it_types[ strtolower($data[13]) ]) ? $it_types[ strtolower($data[13]) ] : NULL );   // unknown ID type: never written (D9)
-			if (($row % $buffer) == 0)
-			{
-				$processed += process_csv_array( $courses, $students );
-				$courses = array();
-				$students = array();
-			}
-	    	}
-	    	if ( count($students) > 0 )
-	    		$processed += process_csv_array( $courses, $students );
-	    fclose($handle);
-	    //drupal_set_message("$processed records processed");
-	    return "$processed records processed";
-	}	
-	else
-		//drupal_set_message("Unable to open file $csv");
-		return "Unable to open file $csv";
-}
-
-
-function process_csv_array($courses, $students)
-{
-	global $user;
-	$count = 0;
-	$course_ids = array();
-	/* Fetch all course_ids, if not found then insert */
-	foreach($courses as $k => $end )
-	{
-		if (isset($course_ids[$k]))
-			continue;
-		$tmp = explode("||", $k);
-		if (count($tmp) < 2)
-			continue;
-		$ctype = $tmp[0];
-		$cstart = $tmp[1];
-		$q = "select c_id from dh_course where c_start='$cstart' and c_type='$ctype'";
-		$cid = db_query($q)->fetchField();
-		if ($cid)
-			$course_ids[$k] = $cid;
-		else
-		{
-			$cid = db_insert('dh_course')->fields(array('c_start' => $cstart, 'c_end' => $end, 'c_type' => $ctype))->execute();
-			$course_ids[$k] = $cid;
-		}
-	}
-	// Donor versioning (F12): delta writes only; a blank/unknown CSV ID never erases a stored ID (D9);
-	// occupation is no longer blanked; re-attendance updates d_course (the trigger freezes past years, U1).
-	foreach( $students as $donor )
-	{
-		$cid = $course_ids[$donor['course']];
-		$check_id = db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_email = :e AND d_contact = :c AND d_deleted = 0',
-			array(':n' => $donor['n'], ':e' => $donor['e'], ':c' => $donor['c']))->fetchField();
-		$co = get_country($donor['co']);
-		$st = get_state($donor['st'], $co);
-		if ($check_id)
-		{
-			if ($cid)
-			{
-				$txn = db_transaction();             // one short single-donor transaction per row (L3/L4)
-				try
-				{
-					$old = db_query('SELECT * FROM dh_donor WHERE d_id = :d FOR UPDATE', array(':d' => (int) $check_id))->fetchAssoc();
-					$d = array('d_name' => mb_convert_encoding($donor['n'], 'UTF-8'), 'd_gender' => $donor['g'],
-						'd_address' => mb_convert_encoding($donor['a'], 'UTF-8'), 'd_pincode' => $donor['p'], 'd_contact' => $donor['c'],
-						'd_email' => $donor['e'], 'd_course' => (int) $cid);
-					if ($co !== '' && $st !== '')
-					{
-						$old_city = (string) db_query('SELECT c_city FROM dh_city WHERE c_id = :i', array(':i' => (int) $old['d_city']))->fetchField();
-						$same_place = ($co === (string) $old['d_country'] && $st === (string) $old['d_state']
-							&& drupal_strtolower(trim($donor['ci'])) === drupal_strtolower(trim($old_city)));
-						$d['d_country'] = $co;
-						$d['d_state'] = $st;
-						$d['d_city'] = $same_place ? (int) $old['d_city'] : get_city($donor['ci'], $st, $co);
-					}
-					// D9: a blank / unknown CSV ID never erases the stored ID; case/space-only differences are no-ops (L18)
-					if ($donor['it'] !== NULL && trim($donor['i']) !== ''
-						&& donor_id_key($donor['it'], $donor['i'], TRUE) !== donor_id_key($old['d_id_type'], $old['d_id_no'], TRUE))
-					{
-						$d['d_id_type'] = (int) $donor['it'];
-						$d['d_id_no'] = donor_id_canonical($donor['i']);
-					}
-					// d_occupation is not in the CSV and is no longer blanked (HEAD :3659)
-					$f = array();
-					foreach ($d as $k => $val)
-						if ((string) $val !== (string) $old[$k])
-							$f[$k] = $val;
-					if ($f)
-					{
-						$f['d_updatedby'] = (int) $user->uid;
-						db_update('dh_donor')->fields($f)->expression('d_updated', 'NOW()')->condition('d_id', (int) $check_id)->execute();
-					}
-				}
-				catch (Throwable $e)
-				{
-					$txn->rollback();
-					watchdog('donation', 'Save rolled back: @m (@f:@l)', array('@m' => $e->getMessage(), '@f' => $e->getFile(), '@l' => $e->getLine()), WATCHDOG_ERROR);   // watchdog_exception() accepts Exception only
-				}
-				unset($txn);
-			}
-		}
-		else
-		{
-			// HEAD :3646-3659 + :3669-3674 (new donor), with the bound lookups
-			$d = array('d_name' => mb_convert_encoding($donor['n'], 'UTF-8'), 'd_gender' => $donor['g'],
-				'd_address' => mb_convert_encoding($donor['a'], 'UTF-8'), 'd_pincode' => $donor['p'], 'd_contact' => $donor['c'],
-				'd_email' => $donor['e'], 'd_country' => $co, 'd_state' => $st, 'd_city' => get_city($donor['ci'], $st, $co),
-				'd_course' => (int) $cid, 'd_id_type' => (int) $donor['it'], 'd_id_no' => donor_id_canonical($donor['i']),
-				'd_occupation' => '', 'd_created' => date('Y-m-d H:i:s'), 'd_createdby' => $user->uid);
-			db_insert('dh_donor')->fields($d)->execute();
-		}
-		$count += 1;
-	}
-	return $count;
-}
-
 
 function donation_donor_upload_form($form, &$form_state)
 {
-	// U5(a): in April-May, uploads change the current details only; last year keeps its own details
+	if (isset($form_state['storage']['check']))
+	{
+		dana_upload_review($form, $form_state['storage']['check'], 'master');
+		return $form;
+	}
 	$note = donor_apr_may_note();
 	if ($note !== '')
 		$form['apr_may_note'] = array('#markup' => '<div class="messages warning">' . check_plain($note) . '</div>');
+	$form['intro'] = array('#markup' => '<p>' . t('Correct the ID Type and ID No of many donors at once: download the Donor Master from the report, '
+		. 'change only the ID Type and ID No columns, and upload the file here.') . '</p><p>'
+		. t('Dana first checks the whole file and shows every problem. Nothing is changed until the file has no problems and you click Use this file.') . '</p>');
 	$form['upload'] = array(
 	    '#type' => 'file',
 	    '#title' => t('CSV File'),
 	    '#description' => t('Upload the file downloaded with "Download Donor Master" from this centre. Files without the first signature line are matched by name + contact + email. Valid ID Types are PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card, No ID'),
 	);
-	$form['submit'] = array('#type' => 'submit', '#value' => 'Upload');
+	$form['check'] = array('#type' => 'submit', '#value' => t('Check file'), '#validate' => array('dana_upload_file_validate'),
+		'#submit' => array('donor_master_check_submit'));
 	$form['#attributes']['enctype'] = 'multipart/form-data';
 	return $form;
 }
 
-function donation_donor_upload_form_validate($form, &$form_state)
+function donor_master_check_submit($form, &$form_state)
 {
-	$file = file_save_upload('upload', array(
-		'file_validate_extensions' => array('csv'),
-	));
-	if ($file)
-	{
-		if ($file = file_move($file, 'private://')) {
-			$form_state['values']['upload'] = $file;
-		}
-		else {
-			form_set_error('upload', t('Failed to write the uploaded file the sites private folder.'));
-		}		
-	}
+	$file = $form_state['values']['upload'];
+	$form_state['storage'] = array('uri' => $file->uri, 'check' => donor_master_check($file->uri));
+	$form_state['rebuild'] = TRUE;
 }
 
-function donation_donor_upload_form_submit($form, &$form_state)
+function donor_master_use($form, &$form_state)
 {
-	$file=$form_state['values']['upload'];
-	unset($form_state['values']['upload']);
-	$file->status = FILE_STATUS_PERMANENT;
-	file_save($file);
-	//$f = file_stream_wrapper_get_instance_by_uri('private://')->getDirectoryPath()."/".$file->filename;
-	$row = 1;
-	drupal_set_message(process_donor_csv($file->uri));
-	//drupal_set_message("File is ".$file->filename);
-}
-
-
-function process_donor_csv($csv)
-{
-	global $user;
-	if (!donation_versioning_ready())
-		return t('Donor versioning is not completely installed on this site; nothing was uploaded.');
-	if (($h = fopen($csv, 'r')) === FALSE)
-		return t('Unable to open file @f', array('@f' => $csv));
-	$lines = array();
-	while (($r = fgetcsv($h, 2000, ',')) !== FALSE)
-		$lines[] = $r;
-	fclose($h);
-	if (!$lines)
-		return t('The file is empty.');
-	$it_types = array();
-	foreach (db_query('SELECT it_name, it_code FROM dh_id_types') as $r)
-		$it_types[strtoupper(trim($r->it_name))] = (int) $r->it_code;
-
-	$signed = FALSE;
-	if (isset($lines[0][0]) && trim($lines[0][0]) === '#Dana Donor Master')
+	$res = donor_master_check($form_state['storage']['uri']);      // checked again just before it is used
+	if ($res['errors'])
 	{
-		$meta = array();
-		foreach (array_slice($lines[0], 1) as $cell)
-		{
-			$kv = explode('=', (string) $cell, 2);
-			if (count($kv) == 2)
-				$meta[trim($kv[0])] = trim($kv[1]);
-		}
-		$site = donation_site_key();
-		if (!isset($meta['site']) || $meta['site'] !== $site)
-			return t('Refused: this file was downloaded from @o, not from this centre (@s). Nothing was changed.',
-				array('@o' => isset($meta['site']) ? $meta['site'] : '?', '@s' => $site));
-		if (!isset($meta['exported'], $meta['sig']) || !hash_equals(donor_master_sig($site, $meta['exported']), $meta['sig']))
-			return t('Refused: the first line of the file (its signature) is not valid. Please download the Donor Master again. Nothing was changed.');
-		$signed = TRUE;
-		array_shift($lines);
+		$form_state['storage']['check'] = $res;
+		$form_state['rebuild'] = TRUE;
+		return;
 	}
-	array_shift($lines);                                           // header row (HEAD :3740 never skipped it: $row was reused)
-
-	$rep = array('updated' => 0, 'unedited' => 0, 'unchanged' => 0, 'updated_ids' => array(), 'kept' => array(), 'conflict' => array(),
-		'unmatched' => array(), 'ambiguous' => array(), 'identity' => array(), 'type' => array(), 'format' => array(), 'failed' => array());
-	$plan = array();
-	$checked = 0;
-	// pass 1: classify every row, no writes
-	foreach ($lines as $n => $d)
-	{
-		if (count($d) < 5 || trim(implode('', $d)) === '')
-			continue;
-		$line = $n + ($signed ? 3 : 2);
-		$name = trim($d[0]);
-		$label = strtoupper(trim($d[3]));
-		$no = donor_id_canonical($d[4]);
-		$tag = $line . ': ' . $name;
-		if ($signed && count($d) >= 7 && ctype_digit(trim($d[5])))
-		{
-			$id = (int) $d[5];
-			$live = db_query('SELECT d_id, d_name FROM dh_donor WHERE d_id = :id AND d_deleted = 0', array(':id' => $id))->fetchAssoc();
-			if (!$live)
-			{
-				$rep['unmatched'][] = $tag;
-				continue;
-			}
-			$checked++;
-			if (!donor_master_identity_ok($id, $name, $live['d_name']))
-			{
-				$rep['identity'][] = $tag . ' (Donor ID ' . $id . ' is ' . $live['d_name'] . ')';
-				continue;
-			}
-		}
-		else
-		{
-			// unsigned (HEAD-format) row: name + contact + email must match exactly one donor (HEAD key, inherently an identity anchor)
-			$ids = db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_contact = :c AND d_email = :e AND d_deleted = 0',
-				array(':n' => $d[0], ':c' => $d[1], ':e' => $d[2]))->fetchCol();
-			if (count($ids) != 1)
-			{
-				$rep[count($ids) ? 'ambiguous' : 'unmatched'][] = $tag;
-				continue;
-			}
-			$id = (int) $ids[0];
-		}
-		$unknown = FALSE;
-		if (preg_match('/^UNKNOWN\s*\((\d+)\)$/', $label, $m))
-		{
-			$type = (int) $m[1];
-			$unknown = TRUE;
-		}
-		elseif (isset($it_types[$label]))
-			$type = $it_types[$label];
-		else
-		{
-			$rep['type'][] = $tag . ' (' . $d[3] . ')';
-			continue;
-		}
-		$check = ($signed && isset($d[6])) ? trim($d[6]) : '';
-		if ($check !== '' && hash_equals(donor_master_row_check($id, $type, $no), $check))
-		{
-			$rep['unedited']++;                                    // not edited since download: never written (L19)
-			continue;
-		}
-		if ($unknown)
-		{
-			$rep['type'][] = $tag . ' (' . $d[3] . ')';
-			continue;
-		}
-		if (!donor_master_id_format_ok($type, $no))
-		{
-			$rep['format'][] = $tag . ' (' . $d[3] . ' ' . $d[4] . ')';
-			continue;
-		}
-		$plan[] = array('tag' => $tag, 'id' => $id, 'type' => $type, 'no' => $no, 'check' => $check);
-	}
-	// M7 + W3: abort the WHOLE file when more than 5% of the Donor-ID rows AND at least 2 rows fail the name check;
-	// a single failing row is only skipped and reported
-	if (count($rep['identity']) >= 2 && count($rep['identity']) * 100 > 5 * max(1, $checked))
-		return t('Refused: @n of @m rows have a Donor ID that belongs to a donor with a different name. Is this the right file? Nothing was changed.',
-			array('@n' => count($rep['identity']), '@m' => $checked)) . '<br>' . check_plain(implode('; ', array_slice($rep['identity'], 0, 20)));
-	// pass 2: one short transaction per row (L3/L4)
-	foreach ($plan as $p)
-	{
-		$txn = db_transaction();
-		try
-		{
-			$now = db_query('SELECT d_id_type, d_id_no FROM dh_donor WHERE d_id = :id FOR UPDATE', array(':id' => $p['id']))->fetchAssoc();
-			if (donor_id_key($now['d_id_type'], $now['d_id_no'], TRUE) === donor_id_key($p['type'], $p['no'], TRUE))
-				$rep['unchanged']++;                               // L18: normalised no-op test
-			elseif ($p['check'] !== '' && !hash_equals(donor_master_row_check($p['id'], $now['d_id_type'], $now['d_id_no']), $p['check']))
-				$rep['conflict'][] = $p['tag'] . ' (now ' . $now['d_id_no'] . ')';      // changed by someone else after the download
-			elseif (donor_id_is_real($now['d_id_type'], $now['d_id_no']) && !donor_id_is_real($p['type'], $p['no']))
-				$rep['kept'][] = $p['tag'];                        // L19: never downgrade a real live ID
-			else
-			{
-				db_update('dh_donor')->fields(array('d_id_type' => $p['type'], 'd_id_no' => $p['no'], 'd_updatedby' => (int) $user->uid))
-					->expression('d_updated', 'NOW()')->condition('d_id', $p['id'])->execute();      // the trigger freezes past FYs
-				$rep['updated']++;
-				$rep['updated_ids'][] = $p['id'];
-			}
-		}
-		catch (Throwable $e)   // PHP 7: also TypeError; never let $txn commit half a submit
-		{
-			$txn->rollback();
-			watchdog('donation', 'Save rolled back: @m (@f:@l)', array('@m' => $e->getMessage(), '@f' => $e->getFile(), '@l' => $e->getLine()), WATCHDOG_ERROR);   // watchdog_exception() accepts Exception only
-			$rep['failed'][] = $p['tag'];
-		}
-		unset($txn);
-	}
-	return donor_master_report($rep);
+	drupal_set_message(donor_master_apply($res));
+	$form_state['storage'] = array();
+	$form_state['rebuild'] = TRUE;
 }
 
 
