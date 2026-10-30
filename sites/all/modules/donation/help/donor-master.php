@@ -62,7 +62,7 @@ return array(
       'title' => 'Upload the corrected file',
       'rights' => array('upload donor master'),
       'body' => '<ol>'
-        . '<li>Open {link:admin/upload-donor-master|Upload Donor Master}.</li>'
+        . '<li>Click the {tab:donormaster} tab at the top of the page.</li>'
         . '<li>Under <b class="ui">CSV File</b>, choose the corrected file.</li>'
         . '<li>Click <b class="ui">Check file</b>. Dana checks the whole file. Nothing is changed yet.</li>'
         . '<li>If Dana lists problems: correct them in your file, click <b class="ui">Upload a corrected file</b>, and start again.</li>'

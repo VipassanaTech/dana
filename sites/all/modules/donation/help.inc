@@ -114,13 +114,14 @@ function dana_help_render_body($html) {
 
 /**
  * The name of a top-menu tab as this centre's menu shows it (a few centres renamed some tabs), else the usual name.
- * $name: home, report, settings, donors, 10bd, users or help.
+ * $name: home, report, settings, donors, 10bd, users, help, uploadcsv or donormaster.
  */
 function dana_help_tab_title($name) {
   $tabs = array('home' => array('<front>', 'Home'), 'report' => array('donation-report', 'Report'),
     'settings' => array('admin/donation', 'Settings'), 'donors' => array('donors', 'Donors'),
     '10bd' => array('income-tax-report', 'Generate 10BD'), 'users' => array('centre-users', 'Users'),
-    'help' => array('help', 'Help'));
+    'help' => array('help', 'Help'), 'uploadcsv' => array('admin/upload-csv', 'Upload CSV'),
+    'donormaster' => array('admin/upload-donor-master', 'Upload Donor Master'));
   if (!isset($tabs[$name])) {
     return $name;
   }

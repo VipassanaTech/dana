@@ -137,10 +137,14 @@ function donation_menu()
 	       'access arguments' => array('access donation'),
 	       'type' => MENU_CALLBACK);
 
+	// Upload pages are top-menu tabs (2026-10-30), shown only to people who can open them
 	$items['admin/upload-csv'] = array( 'title' => t('Upload CSV'),
 	     'page arguments' => array('donation_upload_form'),
 	     'page callback' => 'drupal_get_form',
-	     'access arguments' => array('administer donation'));
+	     'access arguments' => array('administer donation'),
+	     'menu_name' => 'main-menu',
+	     'weight' => 2,
+	     'type' => MENU_NORMAL_ITEM);
 
 	$items['admin/upload-csv/template'] = array( 'title' => t('Student list template'),
 	     'page callback' => 'donation_csv_template',
@@ -150,7 +154,10 @@ function donation_menu()
 	$items['admin/upload-donor-master'] = array( 'title' => t('Upload Donor Master'),
 	     'page arguments' => array('donation_donor_upload_form'),
 	     'page callback' => 'drupal_get_form',
-	     'access arguments' => array('upload donor master'));
+	     'access arguments' => array('upload donor master'),
+	     'menu_name' => 'main-menu',
+	     'weight' => 3,
+	     'type' => MENU_NORMAL_ITEM);
 
 	$items['income-tax-report'] = array( 'title' => t('Income Tax 10BD'),
 	     'page arguments' => array('donation_income_tax_form'),
