@@ -576,6 +576,10 @@ function ua_log_page()
 /** Implements hook_user_login(): a User Admin without donation access lands on the Users page (front page is 'donation'). */
 function donation_user_login(&$edit, $account)
 {
+	// Not after a password reset link: Drupal must open the account page with its reset token,
+	// so the person can set a new password without the old one.
+	if (arg(0) === 'user' && arg(1) === 'reset')
+		return;
 	if (empty($_GET['destination']) && user_access(UA_PERM_MANAGE, $account) && !user_access('access donation', $account))
 		$_GET['destination'] = 'centre-users';
 }
