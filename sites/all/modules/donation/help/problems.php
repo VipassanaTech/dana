@@ -58,17 +58,38 @@ return array(
     array(
       'id' => 'password',
       'title' => 'My new password is not accepted',
-      'body' => '<p>The password must follow some rules. See {help:getting-started#password}.</p>',
+      'body' => '<p>A new password must have all of these:</p>'
+        . '<ul>'
+        . '<li>at least 2 capital letters (A to Z)</li>'
+        . '<li>at least 2 small letters (a to z)</li>'
+        . '<li>at least 2 numbers (0 to 9)</li>'
+        . '<li>at least 1 symbol, like @ # $ % or !</li>'
+        . '<li>at least 10 letters and numbers in all (symbols are not counted in these 10)</li>'
+        . '</ul>'
+        . '<p>Dana shows what is missing. Change the password and click <b class="ui">Save</b> again.</p>'
+        . '<p>To change your password: click <b class="ui">My account</b> at the top right, then the <b class="ui">Edit</b> tab.'
+        . ' Type your old password in <b class="ui">Current password</b>.'
+        . ' Type the new one in <b class="ui">Password</b> and <b class="ui">Confirm password</b>. Click <b class="ui">Save</b>.</p>',
     ),
     array(
       'id' => 'forgot',
       'title' => 'I forgot my password',
-      'body' => '<p>You can get a new one by email. See {help:getting-started#forgot}.</p>',
+      'body' => '<ol>'
+        . '<li>Under the <b class="ui">User login</b> box, click <b class="ui">Request new password</b>.</li>'
+        . '<li>Type your username or the email address of your Dana account in <b class="ui">Username or e-mail address</b>.</li>'
+        . '<li>Click <b class="ui">E-mail new password</b>.</li>'
+        . '<li>Open the email from Dana and click the link in it. The link works only once, and only for 24 hours.</li>'
+        . '<li>On the page that opens, click <b class="ui">Log in</b>.</li>'
+        . '<li>Your account page opens. Type a new password in <b class="ui">Password</b> and <b class="ui">Confirm password</b>, then click <b class="ui">Save</b>.</li>'
+        . '</ol>'
+        . '<p>If the email does not come, look in the spam folder. If it is not there, ask the person who manages Dana users at your centre.</p>',
     ),
     array(
       'id' => 'logged-out',
       'title' => 'Dana logged me out',
-      'body' => '<p>Dana logs you out after 30 minutes without use. Log in again. See {help:getting-started#auto-logout}.</p>',
+      'body' => '<p>If you do not use Dana for 30 minutes, a box asks: <i>Your session is about to expire. Do you want to reset it?</i>'
+        . ' Click <b class="ui">Yes</b> quickly to stay logged in. If you do not answer, Dana logs you out. Log in again.</p>'
+        . '<p class="note">Anything you typed but did not save is lost when Dana logs you out. Save a donation before you leave your desk.</p>',
     ),
   ),
 );

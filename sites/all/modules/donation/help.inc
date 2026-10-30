@@ -12,7 +12,7 @@
 
 /** The help pages, in menu order. A page file help/<key>.php must exist for a key to show. */
 function dana_help_order() {
-  return array('getting-started', 'donation', 'change-donation', 'report', 'tags', 'donors', 'donor-master', '10bd',
+  return array('donation', 'change-donation', 'report', 'tags', 'donors', 'donor-master', '10bd',
     'tally', 'settings', 'users', 'problems');
 }
 

@@ -44,7 +44,7 @@ return array(
         . '<p class="note">Dana does not send the password by email. '
         . 'Give the person their username and temporary password yourself. '
         . 'At the first login, they must choose their own password.</p> '
-        . '<p>The password must follow the password rules: see {help:getting-started#password}. '
+        . '<p>The password must follow the password rules: see {help:problems#password}. '
         . 'If it does not, Dana shows <b class="ui">The password does not meet the site rules:</b> and a list of what is wrong.</p> ',
     ),
     array(
