@@ -48,12 +48,22 @@ function donation_csv_columns()
 	return array('Course Type', 'Start', 'End', 'Name', 'Gender', 'Address', 'Pincode', 'Contact', 'Email', 'Country', 'State', 'City', 'ID No', 'ID Type');
 }
 
-/** YYYY-MM-DD (also YYYY/MM/DD) as YYYY-MM-DD, or '' when it is not a real date. */
+/**
+ * A date as YYYY-MM-DD, or '' when it is not a real date. Accepted: YYYY-MM-DD, YYYY/MM/DD, and day first with a 4-digit
+ * year (DD-MM-YYYY, DD/MM/YYYY), which is how Excel saves dates on Indian computers.
+ */
 function donation_csv_date($v)
 {
-	if (!preg_match('/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/', trim((string) $v), $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1]))
+	$v = trim((string) $v);
+	if (preg_match('/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/', $v, $m))
+		list(, $y, $mo, $d) = $m;
+	elseif (preg_match('/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/', $v, $m))
+		list(, $d, $mo, $y) = $m;
+	else
 		return '';
-	return sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+	if (!checkdate((int) $mo, (int) $d, (int) $y))
+		return '';
+	return sprintf('%04d-%02d-%02d', $y, $mo, $d);
 }
 
 /** Course names compared without case, spaces and dashes: "3-Day Course" = "3 day course". */
@@ -106,9 +116,9 @@ function donation_csv_check($uri)
 		$s = donation_csv_date($cstart);
 		$e = donation_csv_date($cend);
 		if ($s === '')
-			$err[] = t('Start "@v" is not a date like 2026-10-17.', array('@v' => $cstart));
+			$err[] = t('Start "@v" is not a date. Write it like 2026-10-17 or 17-10-2026.', array('@v' => $cstart));
 		if ($e === '')
-			$err[] = t('End "@v" is not a date like 2026-10-28.', array('@v' => $cend));
+			$err[] = t('End "@v" is not a date. Write it like 2026-10-28 or 28-10-2026.', array('@v' => $cend));
 		if ($s !== '' && $e !== '' && $e < $s)
 			$err[] = t('End is before Start.');
 		if ($name === '')
