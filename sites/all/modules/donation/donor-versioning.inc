@@ -900,10 +900,30 @@ function donor_master_sig($site, $exported)
 	return substr(hash_hmac('sha256', 'donor-master|' . $site . '|' . $exported, donor_master_key()), 0, 16);
 }
 
-/** Per-row "Check": proves a row's ID is unchanged since export (normalised ID, L18). 'k' prefix keeps Excel from making it a number. */
-function donor_master_row_check($donor_id, $type, $no)
+/**
+ * Per-row "Check": proves a row's ID is unchanged since export (normalised ID, L18). 'k' prefix keeps Excel from making it a number.
+ * $fy: the financial year of the row (Donor Master lines are per donor and year since 2026-11-02).
+ */
+function donor_master_row_check($donor_id, $type, $no, $fy = NULL)
 {
-	return 'k' . substr(hash_hmac('sha256', donation_site_key() . '|' . (int) $donor_id . '|' . donor_id_key($type, $no, TRUE), donor_master_key()), 0, 12);
+	$y = $fy === NULL ? '' : '|fy' . (int) $fy;
+	return 'k' . substr(hash_hmac('sha256', donation_site_key() . '|' . (int) $donor_id . $y . '|' . donor_id_key($type, $no, TRUE), donor_master_key()), 0, 12);
+}
+
+/** TRUE when the donor has an active (not cancelled) donation in the current financial year. */
+function donor_gave_this_fy($donor_id)
+{
+	return (bool) db_query("SELECT 1 FROM dh_donation WHERE d_donor = :d AND d_fy = :f AND d_deleted = '0' LIMIT 1",
+		array(':d' => (int) $donor_id, ':f' => donation_cur_fy()))->fetchField();
+}
+
+/** 'FY 2025-26' (or '2025-26') -> 2025; 0 when it is not a financial year written that way. */
+function donor_master_parse_fy($v)
+{
+	if (!preg_match('/^\s*(?:FY\s*)?(\d{4})\s*-\s*(\d{2})\s*$/i', (string) $v, $m))
+		return 0;
+	$y = (int) $m[1];
+	return ($y > 0 && (int) $m[2] === ($y + 1) % 100) ? $y : 0;
 }
 
 /** L20: never export an unknown type as 'PAN'. */

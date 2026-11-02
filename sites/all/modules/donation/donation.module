@@ -3211,15 +3211,17 @@ function download_donor_master($params)
 {
 	global $user;
 	require_once(drupal_get_path('module','donation')."/Classes/PHPExcel.php");	
-	// F13 (donor versioning): stays LIVE (the current identity, D21), now with Donor ID and a per-row Check, and a
-	// signed first line so the upload can refuse another centre's file (M7). Filters are bound (donation_report_where).
+	// F13 (donor versioning): one line per donor and financial year (2026-11-02), with the details that year uses
+	// (its own snapshot, else the current details), Donor ID, FY and a per-row Check over the year too, and a signed
+	// first line so the upload can refuse another centre's file (M7). Filters are bound (donation_report_where).
 	$args = array();
-	$q = "SELECT DISTINCT don.d_id AS 'Donor ID', don.d_name AS 'Name', don.d_contact AS 'Mobile', don.d_email AS 'Email',
-		don.d_id_type AS 'it_code', it.it_name AS 'ID Type', don.d_id_no AS 'ID No'
-		FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id LEFT JOIN users u ON d.d_createdBy = u.uid
-		LEFT JOIN dh_id_types it ON (don.d_id_type = it.it_code)
-		WHERE d.d_id > 0 AND d.d_deleted = '0' AND don.d_id IS NOT NULL" . donation_report_where($params, FALSE, 'num_or_f', $args) . "
-		ORDER BY don.d_name, don.d_id";
+	$q = "SELECT DISTINCT don.d_id AS 'Donor ID', d.d_fy AS 'fy', COALESCE(dv.dv_name, don.d_name) AS 'Name',
+		COALESCE(dv.dv_contact, don.d_contact) AS 'Mobile', COALESCE(dv.dv_email, don.d_email) AS 'Email',
+		COALESCE(dv.dv_id_type, don.d_id_type) AS 'it_code', it.it_name AS 'ID Type', COALESCE(dv.dv_id_no, don.d_id_no) AS 'ID No'
+		FROM dh_donation d LEFT JOIN dh_donor don ON d.d_donor = don.d_id LEFT JOIN users u ON d.d_createdBy = u.uid" . donation_donor_fy_join('d') . "
+		LEFT JOIN dh_id_types it ON (it.it_code = COALESCE(dv.dv_id_type, don.d_id_type))
+		WHERE d.d_id > 0 AND d.d_deleted = '0' AND don.d_id IS NOT NULL AND d.d_fy > 0" . donation_report_where($params, TRUE, 'num_or_f', $args) . "
+		ORDER BY 3, don.d_id, d.d_fy";
 
 	$data = array();
 	$result = db_query($q, $args);
@@ -3230,14 +3232,14 @@ function download_donor_master($params)
 		$site = donation_site_key();
 		$exported = donation_db_now();
 		fputcsv($fp, array('#Dana Donor Master', 'site=' . $site, 'exported=' . $exported, 'sig=' . donor_master_sig($site, $exported)));
-		fputcsv($fp, array('Full Name', 'Contact', 'Email', 'ID Type', 'ID No', 'Donor ID', 'Check'));
+		fputcsv($fp, array('Full Name', 'Contact', 'Email', 'FY', 'ID Type', 'ID No', 'Donor ID', 'Check'));
 		$total_recs = $result->rowCount();
-		while ( $row = $result->fetchAssoc() ) 
+		while ( $row = $result->fetchAssoc() )
 		{
 			// L20: an unknown type is exported as UNKNOWN(n) and 0/'' as No ID (never "PAN")
-			fputcsv($fp, array($row['Name'], $row['Mobile'], $row['Email'],
+			fputcsv($fp, array($row['Name'], $row['Mobile'], $row['Email'], 'FY ' . donation_fy_label($row['fy']),
 				donor_master_type_label($row['it_code'], $row['ID Type'], $row['ID No']), $row['ID No'], $row['Donor ID'],
-				donor_master_row_check($row['Donor ID'], $row['it_code'], $row['ID No'])));
+				donor_master_row_check($row['Donor ID'], $row['it_code'], $row['ID No'], $row['fy'])));
 		}
 		fclose($fp);
 		header('Content-type: text/csv');
@@ -3561,17 +3563,16 @@ function donation_donor_upload_form($form, &$form_state)
 		dana_upload_review($form, $form_state['storage']['check'], 'master');
 		return $form;
 	}
-	$note = donor_apr_may_note();
-	if ($note !== '')
-		$form['apr_may_note'] = array('#markup' => '<div class="messages warning">' . check_plain($note) . '</div>');
+	// (no April-May note here: each line names its financial year, and an upload changes that year only)
 	$form['dana_help'] = array('#markup' => dana_help_link('donor-master', 'upload'), '#weight' => -100);
-	$form['intro'] = array('#markup' => '<p>' . t('Correct the ID Type and ID No of many donors at once: download the Donor Master from the report, '
-		. 'change only the ID Type and ID No columns, and upload the file here.') . '</p><p>'
+	$form['intro'] = array('#markup' => '<p>' . t('Correct the ID Type and ID No of many donors at once: download the Donor Master from the report '
+		. '(one line for each donor and financial year), change only the ID Type and ID No columns, and upload the file here. '
+		. 'Each line changes the ID of its own financial year only.') . '</p><p>'
 		. t('Dana first checks the whole file and shows every problem. Nothing is changed until the file has no problems and you click Use this file.') . '</p>');
 	$form['upload'] = array(
 	    '#type' => 'file',
 	    '#title' => t('CSV File'),
-	    '#description' => t('Upload the file downloaded with "Download Donor Master" from this centre. Files without the first signature line are matched by name + contact + email. Valid ID Types are PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card, No ID'),
+	    '#description' => t('Upload the file downloaded with "Download Donor Master" from this centre. Valid ID Types are PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card, No ID'),
 	);
 	$form['check'] = array('#type' => 'submit', '#value' => t('Check file'), '#validate' => array('dana_upload_file_validate'),
 		'#submit' => array('donor_master_check_submit'));

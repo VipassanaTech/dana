@@ -1,5 +1,5 @@
 <?php
-// Help page: Importing students (Upload CSV). Simple English, no technical details. Checked against the live code on 2026-10-30.
+// Help page: Importing students (Upload CSV). Simple English, no technical details. Checked against the live code on 2026-11-02.
 return array(
   'title' => 'Importing students (Upload CSV)',
   'summary' => 'Add the students of a course to Dana from a file, so their names come up on the donation form.',
@@ -68,7 +68,8 @@ return array(
         . '<li>If there are no problems: Dana shows how many students will be added or updated, and the courses. Check it.</li>'
         . '<li>Click <b class="ui">Use this file</b>. Or click <b class="ui">Cancel</b> to stop.</li>'
         . '</ol>'
-        . '<p>Uploading the same file again does no harm. Students already in Dana are updated, not added twice.</p>',
+        . '<p>Uploading the same file again does no harm. Students already in Dana are updated, not added twice.</p>'
+        . '<p class="note">A student already in Dana who gave in this financial year is only put on the course. Dana does not change their name, address, ID or other details, because their receipts and this year\'s Form 10BD use them. To correct those details, use <b class="ui">Edit</b> on the {tab:donors} page.</p>',
     ),
     array(
       'id' => 'problems',

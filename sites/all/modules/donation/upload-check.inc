@@ -78,7 +78,7 @@ function donation_csv_course_key($type)
  */
 function donation_csv_check($uri)
 {
-	$res = array('errors' => array(), 'notes' => array(), 'courses' => array(), 'students' => array(), 'new' => 0, 'update' => 0);
+	$res = array('errors' => array(), 'notes' => array(), 'courses' => array(), 'students' => array(), 'new' => 0, 'update' => 0, 'keep' => 0);
 	if (!donation_versioning_ready())
 	{
 		$res['errors'][] = t('Donor versioning is not completely installed on this site.');
@@ -202,7 +202,14 @@ function donation_csv_check($uri)
 		$id = (int) db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_email = :e AND d_contact = :c AND d_deleted = 0',
 			array(':n' => $st['n'], ':e' => $st['e'], ':c' => $st['c']))->fetchField();
 		$res['students'][$j]['id'] = $id;
-		$id ? $res['update']++ : $res['new']++;
+		// a donor who gave this financial year is only put on the course: its receipts and this year's 10BD use its details
+		$res['students'][$j]['keep'] = $id && donor_gave_this_fy($id);
+		if (!$id)
+			$res['new']++;
+		elseif ($res['students'][$j]['keep'])
+			$res['keep']++;
+		else
+			$res['update']++;
 	}
 	if (!$res['errors'] && !$res['students'])
 		$res['errors'][] = t('The file has no students. Under the line with the column names, add one line for each student.');
@@ -226,6 +233,7 @@ function donation_csv_apply(array $res)
 	}
 	$added = 0;
 	$updated = 0;
+	$kept = 0;
 	$failed = array();
 	foreach ($res['students'] as $s)
 	{
@@ -235,7 +243,15 @@ function donation_csv_apply(array $res)
 		{
 			$id = (int) db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_email = :e AND d_contact = :c AND d_deleted = 0',
 				array(':n' => $s['n'], ':e' => $s['e'], ':c' => $s['c']))->fetchField();
-			if ($id)
+			if ($id && donor_gave_this_fy($id))
+			{
+				// gave this financial year: only put on the course, the details stay as they are (2026-11-02)
+				$old = db_query('SELECT d_course FROM dh_donor WHERE d_id = :d FOR UPDATE', array(':d' => $id))->fetchAssoc();
+				if ((int) $old['d_course'] !== $cid)
+					db_update('dh_donor')->fields(array('d_course' => $cid, 'd_updatedby' => (int) $user->uid))->expression('d_updated', 'NOW()')->condition('d_id', $id)->execute();
+				$kept++;
+			}
+			elseif ($id)
 			{
 				$old = db_query('SELECT * FROM dh_donor WHERE d_id = :d FOR UPDATE', array(':d' => $id))->fetchAssoc();
 				$d = array('d_name' => mb_convert_encoding($s['n'], 'UTF-8'), 'd_gender' => $s['g'], 'd_address' => mb_convert_encoding($s['a'], 'UTF-8'),
@@ -285,6 +301,9 @@ function donation_csv_apply(array $res)
 		unset($txn);
 	}
 	$msg = t('File used: @a new students added, @u students updated, @c new courses.', array('@a' => $added, '@u' => $updated, '@c' => $new_courses));
+	if ($kept)
+		$msg .= ' ' . format_plural($kept, '1 student who gave this financial year was only put on the course; their details were not changed.',
+			'@count students who gave this financial year were only put on the course; their details were not changed.');
 	if ($failed)
 		$msg .= ' ' . t('Could not be saved (@n): !l', array('@n' => count($failed), '!l' => implode('; ', $failed)));
 	return $msg;
@@ -338,34 +357,42 @@ function donor_master_check($uri)
 		$res['errors'][] = $lines === NULL ? t('The file could not be opened.') : t('The file is empty.');
 		return $res;
 	}
-	$first = 2;
-	if (isset($lines[0][0]) && trim($lines[0][0]) === '#Dana Donor Master')
+	if (!isset($lines[0][0]) || trim($lines[0][0]) !== '#Dana Donor Master')
 	{
-		$meta = array();
-		foreach (array_slice($lines[0], 1) as $cell)
-		{
-			$kv = explode('=', (string) $cell, 2);
-			if (count($kv) == 2)
-				$meta[trim($kv[0])] = trim($kv[1]);
-		}
-		$site = donation_site_key();
-		if (!isset($meta['site']) || $meta['site'] !== $site)
-		{
-			$res['errors'][] = t('This file was downloaded from @o, not from this centre (@s). Download the Donor Master from this centre.',
-				array('@o' => isset($meta['site']) ? $meta['site'] : '?', '@s' => $site));
-			return $res;
-		}
-		if (!isset($meta['exported'], $meta['sig']) || !hash_equals(donor_master_sig($site, $meta['exported']), $meta['sig']))
-		{
-			$res['errors'][] = t('The first line of the file was changed. Download the Donor Master again and do not change its first line.');
-			return $res;
-		}
-		$res['signed'] = TRUE;
-		array_shift($lines);
-		$first = 3;
+		$res['errors'][] = t('This file does not start with the first line Dana writes. Download the Donor Master again from this centre, and do not change its first line.');
+		return $res;
 	}
-	array_shift($lines);                                           // column names
+	$meta = array();
+	foreach (array_slice($lines[0], 1) as $cell)
+	{
+		$kv = explode('=', (string) $cell, 2);
+		if (count($kv) == 2)
+			$meta[trim($kv[0])] = trim($kv[1]);
+	}
+	$site = donation_site_key();
+	if (!isset($meta['site']) || $meta['site'] !== $site)
+	{
+		$res['errors'][] = t('This file was downloaded from @o, not from this centre (@s). Download the Donor Master from this centre.',
+			array('@o' => isset($meta['site']) ? $meta['site'] : '?', '@s' => $site));
+		return $res;
+	}
+	if (!isset($meta['exported'], $meta['sig']) || !hash_equals(donor_master_sig($site, $meta['exported']), $meta['sig']))
+	{
+		$res['errors'][] = t('The first line of the file was changed. Download the Donor Master again and do not change its first line.');
+		return $res;
+	}
+	$res['signed'] = TRUE;
+	array_shift($lines);
+	$head = array_shift($lines);                                   // column names
+	if (!is_array($head) || count($head) < 8 || trim($head[3]) !== 'FY')
+	{
+		$res['errors'][] = t('This file was downloaded before Dana showed the financial year (FY) of each line. Download the Donor Master again.');
+		return $res;
+	}
+	$first = 3;
+	$cur = donation_cur_fy();
 	$types = dana_id_type_names();
+	$seen = array();
 	foreach ($lines as $n => $d)
 	{
 		if (dana_upload_row_is_blank($d))
@@ -373,43 +400,50 @@ function donor_master_check($uri)
 		$line = $n + $first;
 		$name = trim(isset($d[0]) ? $d[0] : '');
 		$at = dana_upload_where($line, $name);
-		$need = $res['signed'] ? 7 : 5;
-		if (count($d) < $need)
+		if (count($d) < 8)
 		{
-			$res['errors'][] = $at . ': ' . t('has @n columns; it needs @m.', array('@n' => count($d), '@m' => $need));
+			$res['errors'][] = $at . ': ' . t('has @n columns; it needs @m.', array('@n' => count($d), '@m' => 8));
 			continue;
 		}
 		// which donor
-		if ($res['signed'] && ctype_digit(trim($d[5])))
+		if (!ctype_digit(trim($d[6])))
 		{
-			$id = (int) $d[5];
-			$live = db_query('SELECT d_id, d_name FROM dh_donor WHERE d_id = :id AND d_deleted = 0', array(':id' => $id))->fetchAssoc();
-			if (!$live)
-			{
-				$res['errors'][] = $at . ': ' . t('there is no donor with Donor ID @i.', array('@i' => $id));
-				continue;
-			}
-			if (!donor_master_identity_ok($id, $name, $live['d_name']))
-			{
-				$res['errors'][] = $at . ': ' . t('Donor ID @i belongs to "@o", not to this name. Do not change the Full Name or Donor ID columns.',
-					array('@i' => $id, '@o' => $live['d_name']));
-				continue;
-			}
+			$res['errors'][] = $at . ': ' . t('the Donor ID "@i" is not a number. Do not change the Donor ID column.', array('@i' => $d[6]));
+			continue;
 		}
-		else
+		$id = (int) $d[6];
+		$live = db_query('SELECT d_id, d_name FROM dh_donor WHERE d_id = :id AND d_deleted = 0', array(':id' => $id))->fetchAssoc();
+		if (!$live)
 		{
-			$ids = db_query('SELECT d_id FROM dh_donor WHERE d_name = :n AND d_contact = :c AND d_email = :e AND d_deleted = 0',
-				array(':n' => $d[0], ':c' => $d[1], ':e' => $d[2]))->fetchCol();
-			if (count($ids) != 1)
-			{
-				$res['errors'][] = $at . ': ' . (count($ids) ? t('more than one donor has this name, contact and email.')
-					: t('no donor has this name, contact and email.'));
-				continue;
-			}
-			$id = (int) $ids[0];
+			$res['errors'][] = $at . ': ' . t('there is no donor with Donor ID @i.', array('@i' => $id));
+			continue;
 		}
+		if (!donor_master_identity_ok($id, $name, $live['d_name']))
+		{
+			$res['errors'][] = $at . ': ' . t('Donor ID @i belongs to "@o", not to this name. Do not change the Full Name or Donor ID columns.',
+				array('@i' => $id, '@o' => $live['d_name']));
+			continue;
+		}
+		// which financial year
+		$fy = donor_master_parse_fy($d[3]);
+		if (!$fy || $fy > $cur)
+		{
+			$res['errors'][] = $at . ': ' . t('FY "@v" is not a financial year of this donor\'s donations. Do not change the FY column.', array('@v' => $d[3]));
+			continue;
+		}
+		if (!db_query("SELECT 1 FROM dh_donation WHERE d_donor = :d AND d_fy = :f AND d_deleted = '0' LIMIT 1", array(':d' => $id, ':f' => $fy))->fetchField())
+		{
+			$res['errors'][] = $at . ': ' . t('this donor has no donations in FY @f.', array('@f' => donation_fy_label($fy)));
+			continue;
+		}
+		if (isset($seen[$id . '|' . $fy]))
+		{
+			$res['errors'][] = $at . ': ' . t('Donor ID @i, FY @f is also on line @l.', array('@i' => $id, '@f' => donation_fy_label($fy), '@l' => $seen[$id . '|' . $fy]));
+			continue;
+		}
+		$seen[$id . '|' . $fy] = $line;
 		// which ID type
-		$label = strtoupper(preg_replace('/\s+/', ' ', trim($d[3])));
+		$label = strtoupper(preg_replace('/\s+/', ' ', trim($d[4])));
 		$unknown = FALSE;
 		if (preg_match('/^UNKNOWN\s*\((\d+)\)$/', $label, $m))
 		{
@@ -420,27 +454,29 @@ function donor_master_check($uri)
 			$type = $types[$label];
 		else
 		{
-			$res['errors'][] = $at . ': ' . t('ID Type "@v" is not known. Use PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card or No ID.', array('@v' => $d[3]));
+			$res['errors'][] = $at . ': ' . t('ID Type "@v" is not known. Use PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card or No ID.', array('@v' => $d[4]));
 			continue;
 		}
-		$no = dana_id_clean($d[4]);
-		$check = ($res['signed'] && isset($d[6])) ? trim($d[6]) : '';
-		if ($check !== '' && hash_equals(donor_master_row_check($id, $type, $no), $check))
+		$no = dana_id_clean($d[5]);
+		$check = trim(isset($d[7]) ? $d[7] : '');
+		if ($check !== '' && hash_equals(donor_master_row_check($id, $type, $no, $fy), $check))
 		{
 			$res['unedited']++;                                    // not changed in the file
 			continue;
 		}
 		if ($unknown)
 		{
-			$res['errors'][] = $at . ': ' . t('ID Type "@v" is not known. Use PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card or No ID.', array('@v' => $d[3]));
+			$res['errors'][] = $at . ': ' . t('ID Type "@v" is not known. Use PAN, Aadhaar, Passport, Voter ID, Driving License, Ration Card or No ID.', array('@v' => $d[4]));
 			continue;
 		}
-		$now = db_query('SELECT d_id_type, d_id_no, d_country FROM dh_donor WHERE d_id = :id', array(':id' => $id))->fetchAssoc();
-		list($t2, $n2) = dana_id_retype($type, $no, dana_donor_is_india($now['d_country']));
+		// the ID that year uses now: its own details, else the current details
+		$eff = donor_effective_dv($id, $fy);
+		$now = array('d_id_type' => $eff['dv']['dv_id_type'], 'd_id_no' => $eff['dv']['dv_id_no']);
+		list($t2, $n2) = dana_id_retype($type, $no, dana_donor_is_india($eff['dv']['dv_country_code']));
 		$p = dana_id_problem($t2, $n2);
 		if ($p !== '')
 		{
-			$res['errors'][] = $at . ': ' . t('ID No "@v": @p', array('@v' => $d[4], '@p' => $p));
+			$res['errors'][] = $at . ': ' . t('ID No "@v": @p', array('@v' => $d[5], '@p' => $p));
 			continue;
 		}
 		if (donor_id_key($now['d_id_type'], $now['d_id_no'], TRUE) === donor_id_key($t2, $n2, TRUE))
@@ -448,10 +484,10 @@ function donor_master_check($uri)
 			$res['unchanged']++;                                   // already like this in Dana
 			continue;
 		}
-		if ($check !== '' && !hash_equals(donor_master_row_check($id, $now['d_id_type'], $now['d_id_no']), $check))
+		if ($check !== '' && !hash_equals(donor_master_row_check($id, $now['d_id_type'], $now['d_id_no'], $fy), $check))
 		{
-			$res['errors'][] = $at . ': ' . t('someone changed this donor\'s ID in Dana after the file was downloaded (it is now @t @n). Download the Donor Master again.',
-				array('@t' => dana_id_type_label($now['d_id_type']), '@n' => $now['d_id_no']));
+			$res['errors'][] = $at . ': ' . t('someone changed this donor\'s ID for FY @f in Dana after the file was downloaded (it is now @t @n). Download the Donor Master again.',
+				array('@f' => donation_fy_label($fy), '@t' => dana_id_type_label($now['d_id_type']), '@n' => $now['d_id_no']));
 			continue;
 		}
 		if (donor_id_is_real($now['d_id_type'], $now['d_id_no']) && !donor_id_is_real($t2, $n2))
@@ -462,34 +498,61 @@ function donor_master_check($uri)
 		}
 		if ($t2 !== $type)
 			$res['notes'][] = $at . ': ' . t('the ID number is a @new number, so it will be saved as @new (the file says @old).',
-				array('@new' => dana_id_type_label($t2), '@old' => $d[3]));
-		$res['plan'][] = array('line' => $line, 'at' => $at, 'id' => $id, 'type' => $t2, 'no' => $n2, 'check' => $check,
-			'old' => dana_id_type_label($now['d_id_type']) . ' ' . $now['d_id_no']);
+				array('@new' => dana_id_type_label($t2), '@old' => $d[4]));
+		$res['plan'][] = array('line' => $line, 'at' => $at, 'id' => $id, 'fy' => $fy, 'type' => $t2, 'no' => $n2, 'check' => $check,
+			'old' => dana_id_type_label($now['d_id_type']) . ' ' . $now['d_id_no'],
+			'past' => $fy < $cur, 'late' => $fy < $cur && donation_10bd_due_passed($fy));
 	}
 	return $res;
 }
 
-/** Writes a checked Donor Master file (donor_master_check() found no errors). Returns the message for the person. */
+/**
+ * Writes a checked Donor Master file (donor_master_check() found no errors). Returns the message for the person.
+ * Each line changes its own financial year only: the current year through the donor's current details (the freeze
+ * keeps earlier years as they are), an earlier year as that year's own details (as a past-year correction on Edit Donor).
+ */
 function donor_master_apply(array $res)
 {
 	global $user;
+	$cur = donation_cur_fy();
 	$updated = array();
+	$n_cur = 0;
+	$n_past = 0;
+	$n_late = 0;
 	$skipped = array();
 	foreach ($res['plan'] as $p)
 	{
 		$txn = db_transaction();
 		try
 		{
-			$now = db_query('SELECT d_id_type, d_id_no FROM dh_donor WHERE d_id = :id FOR UPDATE', array(':id' => $p['id']))->fetchAssoc();
+			$live = db_query('SELECT d_id_type, d_id_no FROM dh_donor WHERE d_id = :id FOR UPDATE', array(':id' => $p['id']))->fetchAssoc();
+			$eff = donor_effective_dv($p['id'], $p['fy']);
+			$now = array('d_id_type' => $eff['dv']['dv_id_type'], 'd_id_no' => $eff['dv']['dv_id_no']);
 			if (donor_id_key($now['d_id_type'], $now['d_id_no'], TRUE) === donor_id_key($p['type'], $p['no'], TRUE))
 				continue;
-			if ($p['check'] !== '' && !hash_equals(donor_master_row_check($p['id'], $now['d_id_type'], $now['d_id_no']), $p['check']))
+			if ($p['check'] !== '' && !hash_equals(donor_master_row_check($p['id'], $now['d_id_type'], $now['d_id_no'], $p['fy']), $p['check']))
 			{
 				$skipped[] = $p['at'];                             // changed by someone in the last moments
 				continue;
 			}
-			db_update('dh_donor')->fields(array('d_id_type' => $p['type'], 'd_id_no' => $p['no'], 'd_updatedby' => (int) $user->uid))
-				->expression('d_updated', 'NOW()')->condition('d_id', $p['id'])->execute();
+			if ((int) $p['fy'] >= $cur)
+			{
+				db_update('dh_donor')->fields(array('d_id_type' => $p['type'], 'd_id_no' => $p['no'], 'd_updatedby' => (int) $user->uid))
+					->expression('d_updated', 'NOW()')->condition('d_id', $p['id'])->execute();
+				$n_cur++;
+			}
+			else
+			{
+				$target = $eff['dv'];
+				$target['dv_id_type'] = (int) $p['type'];
+				$target['dv_id_no'] = (string) $p['no'];
+				$target['dv_id_type_name'] = (string) db_query('SELECT it_name FROM dh_id_types WHERE it_code = :t ORDER BY it_id LIMIT 1', array(':t' => (int) $p['type']))->fetchField();
+				if (!donor_past_fy_correct($p['id'], $p['fy'], $target, (int) $user->uid, 0, 'donor-master', array('id')))
+					continue;
+				$n_past++;
+				if (!empty($p['late']))
+					$n_late++;
+			}
 			$updated[] = $p['id'];
 		}
 		catch (Throwable $e)
@@ -500,19 +563,14 @@ function donor_master_apply(array $res)
 		}
 		unset($txn);
 	}
-	$out = array(format_plural(count($updated), 'File used: the ID of 1 donor was changed.', 'File used: the IDs of @count donors were changed.'));
+	$out = array(format_plural(count($updated), 'File used: 1 ID was changed', 'File used: @count IDs were changed')
+		. ' ' . t('(@c for FY @f, @p for earlier financial years).', array('@c' => $n_cur, '@f' => donation_fy_label($cur), '@p' => $n_past)));
+	if ($n_late)
+		$out[] = format_plural($n_late, '1 of them is for a year whose Form 10BD due date has passed: if that 10BD was already filed, a revised 10BD may be needed.',
+			'@count of them are for years whose Form 10BD due date has passed: if that 10BD was already filed, a revised 10BD may be needed.');
 	if ($skipped)
 		$out[] = t('Not changed, because someone changed them at the same time (@n): !l. Download the Donor Master again for these.',
 			array('@n' => count($skipped), '!l' => implode('; ', $skipped)));
-	if ($updated && donation_in_apr_may())
-	{
-		$prev = donation_cur_fy() - 1;
-		$n = (int) db_query('SELECT COUNT(DISTINCT d_donor) FROM dh_donation WHERE d_fy = :f AND d_donor IN (:ids)',
-			array(':f' => $prev, ':ids' => $updated))->fetchField();
-		if ($n)
-			$out[] = t('@n of these donors have FY @f donations. FY @f keeps the IDs it had when it closed on 31 March, so its Form 10BD does not show these changes yet. Review them on the Income Tax 10BD page (FY @f review list) and apply where needed.',
-				array('@n' => $n, '@f' => donation_fy_label($prev)));
-	}
 	return implode(' ', $out);
 }
 
@@ -541,18 +599,28 @@ function dana_upload_review(&$form, array $res, $kind)
 				. ($c['id'] ? '' : ' (' . t('new course') . ')');
 		$summary = '<p>' . t('The file was checked: no problems. Nothing has been changed yet.') . '</p><ul><li>'
 			. t('@n new students will be added, @u students already in Dana will be updated.', array('@n' => $res['new'], '@u' => $res['update']))
-			. '</li><li>' . t('Courses:') . ' ' . implode('; ', $courses) . '</li></ul>';
+			. '</li>' . (!empty($res['keep']) ? '<li>' . format_plural($res['keep'], '1 student already in Dana gave this financial year: they will only be put on the course. Their details stay as they are.',
+				'@count students already in Dana gave this financial year: they will only be put on the course. Their details stay as they are.') . '</li>' : '')
+			. '<li>' . t('Courses:') . ' ' . implode('; ', $courses) . '</li></ul>';
 		$todo = count($res['students']);
 	}
 	else
 	{
 		$changes = array();
+		$late = 0;
 		foreach ($res['plan'] as $p)
-			$changes[] = $p['at'] . ': ' . check_plain($p['old']) . ' &rarr; ' . check_plain(dana_id_type_label($p['type']) . ' ' . $p['no']);
+		{
+			$changes[] = $p['at'] . ', ' . t('FY @f', array('@f' => donation_fy_label($p['fy']))) . ': ' . check_plain($p['old']) . ' &rarr; ' . check_plain(dana_id_type_label($p['type']) . ' ' . $p['no'])
+				. (!empty($p['late']) ? ' (' . t('after the 10BD due date') . ')' : '');
+			if (!empty($p['late']))
+				$late++;
+		}
 		$summary = '<p>' . t('The file was checked: no problems. Nothing has been changed yet.') . '</p><p>'
-			. t('@c donors will get a new ID. @e lines were not edited and @s already match Dana; they stay as they are.',
+			. t('@c lines will get a new ID, each for its own financial year only. @e lines were not edited and @s already match Dana; they stay as they are.',
 				array('@c' => count($res['plan']), '@e' => $res['unedited'], '@s' => $res['unchanged'])) . '</p>'
-			. ($changes ? $items($changes) : '');
+			. ($changes ? $items($changes) : '')
+			. ($late ? '<p>' . format_plural($late, '1 of these lines is for a year whose Form 10BD due date has passed. If that 10BD was already filed, a revised 10BD may be needed.',
+				'@count of these lines are for years whose Form 10BD due date has passed. If that 10BD was already filed, a revised 10BD may be needed.') . '</p>' : '');
 		$todo = count($res['plan']);
 	}
 	if ($res['notes'])
