@@ -1965,28 +1965,6 @@ function generate_receipt( $id, $amended )
 	return variable_get('receipt_prefix', '').str_pad($receipt_num, 7, "0", STR_PAD_LEFT);
 }
 
-function process_mail_queue()
-{
-	$q = "select d_id from dh_donation where d_deleted=0 and d_mail_queue=1";
-	$hand = db_query($q);
-	$sent = 0;
-	$failed = array();
-	while ( $row = $hand->fetchAssoc() )
-	{
-		$r = send_donor_email($row['d_id']);
-		if (!empty($r['success']))
-		{
-			db_update('dh_donation')->fields(array('d_mail_queue' => 0))->condition('d_id', $row['d_id'])->execute();
-			$sent++;
-		}
-		else
-			$failed[] = $r;     // stays in the queue for the next run
-	}
-	drupal_set_message(t('Email queue: @n receipt(s) sent.', array('@n' => $sent)));
-	foreach ($failed as $r)
-		drupal_set_message(t('Not sent@to: @why', array('@to' => $r['to'] !== '' ? ' to ' . $r['to'] : '', '@why' => $r['msg'])), 'warning');
-}
-
 /**
  * A short, staff-readable reason from a failed Mailgun call (the API's own message when there is one).
  */
@@ -2378,7 +2356,7 @@ function donation_report_form($form, &$form_state)
 
 
 	$form['sub1'] = array('#type' => 'submit', '#value' => t('Get Report'), '#weight' => 6.1);
-	if ( user_access("sync to tally") && (variable_get('tally_server', '') <> '') )
+	if ( donation_tally_allowed() )
 		$form['sub2'] = array('#type' => 'submit', '#value' => 'Sync to Tally', '#weight' => 6.2);
 	if ( user_access("download donor master")  )
 		$form['sub3'] = array('#type' => 'submit', '#value' => 'Download Donor Master', '#weight' => 6.3);
@@ -3160,22 +3138,23 @@ function donation_report_form($form, &$form_state)
 
 function donation_report_form_submit($form, &$form_state)
 {
-	if ( $form_state['input']['op'] == 'Sync to Tally' )
+	// Act on the button Drupal matched, never on the button name sent with the request: a button exists only for
+	// people allowed to use it (donation_report_form), and the right is checked again here (2026-11-02).
+	$op = isset($form_state['triggering_element']['#value']) ? (string) $form_state['triggering_element']['#value'] : '';
+	if ( $op === 'Sync to Tally' )
 	{
-		$domain =  str_replace(".dana.vridhamma.org", "", $_SERVER['HTTP_HOST']);
-	     drupal_set_message("Synced to Tally. It will take a few minutes ... ");
-	     chdir("/dhamma/web/domains/dana");
-	     exec("nohup /usr/bin/php dump-to-tally.php ".$domain." &");
+		if ( donation_tally_allowed() )
+			donation_tally_start();
+		else
+			drupal_set_message(t('You cannot send donations to Tally.'), 'error');
 	}
-	elseif ( $form_state['input']['op'] == 'Process Email Queue' )
+	elseif ( $op === 'Download Donor Master' )
 	{
-	    drupal_set_message("Email Queue Processed");
-	    process_mail_queue();
-	    //chdir("/dhamma/web/domains/donation");
-	    //exec("nohup /usr/bin/php dump-to-tally.php &");
-	}
-	elseif ( $form_state['input']['op'] == 'Download Donor Master' )
-	{
+		if ( !user_access('download donor master') )
+		{
+			drupal_set_message(t('You cannot download the Donor Master.'), 'error');
+			return;
+		}
 		$data = $form_state['input'];
 		$params = array();
 		$params['from'] = $data['r_from'];
@@ -3205,6 +3184,64 @@ function donation_report_form_submit($form, &$form_state)
 	    $form_state['rebuild'] = TRUE;
 	}
 //	drupal_goto("donation-report-results", array('query' => $data));
+}
+
+/** TRUE when this person may send donations to Tally and this centre has a Tally server. */
+function donation_tally_allowed()
+{
+	return user_access('sync to tally') && trim((string) variable_get('tally_server', '')) !== '';
+}
+
+/**
+ * The lock file of this centre's Tally sync. dump-to-tally.php (domain-dana) holds a lock on the same file while it
+ * runs, so only one sync per centre runs at a time: a second one would send the donations the first has not finished
+ * yet again, and Tally takes a second voucher with the same receipt number. /run/lock, not /tmp: the web server has
+ * its own private /tmp.
+ */
+function donation_tally_lock_file($domain)
+{
+	return '/run/lock/dana-tally-' . preg_replace('/[^a-z0-9_-]/i', '', $domain) . '.lock';
+}
+
+/** TRUE while a Tally sync of this centre runs, FALSE when none runs, NULL when the lock cannot be checked. */
+function donation_tally_running($domain)
+{
+	$f = donation_tally_lock_file($domain);
+	$fp = @fopen($f, 'c');
+	if ( !$fp )
+		$fp = @fopen($f, 'r');                       // made by another user: a read-only handle can still be locked
+	if ( !$fp )
+		return NULL;
+	$free = flock($fp, LOCK_EX | LOCK_NB);
+	if ( $free )
+		flock($fp, LOCK_UN);
+	fclose($fp);
+	return !$free;
+}
+
+/** Starts this centre's Tally sync in the background, unless one is already running. The page returns at once. */
+function donation_tally_start()
+{
+	global $user;
+	$domain = str_replace('.dana.vridhamma.org', '', $_SERVER['HTTP_HOST']);
+	$running = donation_tally_running($domain);
+	if ( $running === NULL )
+	{
+		watchdog('donation', 'Tally sync not started by %u: the lock file %f cannot be opened', array('%u' => $user->name, '%f' => donation_tally_lock_file($domain)), WATCHDOG_ERROR);
+		drupal_set_message(t('The Tally sync could not be started. Please tell the Dana team.'), 'error');
+		return;
+	}
+	if ( $running )
+	{
+		watchdog('donation', 'Tally sync not started by %u: one is already running', array('%u' => $user->name), WATCHDOG_NOTICE);
+		drupal_set_message(t('A Tally sync is already running for this centre, so it was not started again. Wait a few minutes, then tick Not Synced and click Get Report to see what is still waiting.'), 'warning');
+		return;
+	}
+	watchdog('donation', 'Tally sync started by %u', array('%u' => $user->name), WATCHDOG_INFO);
+	// output to /dev/null: without it exec() waits until the whole sync has ended
+	exec('cd ' . escapeshellarg(variable_get('dana_tally_dir', '/dhamma/web/domains/dana')) . ' && nohup /usr/bin/php dump-to-tally.php '
+		. escapeshellarg($domain) . ' > /dev/null 2>&1 &');
+	drupal_set_message(t('Tally sync started. It takes a few minutes, and you can go on working. If you click Sync to Tally again while it runs, Dana tells you and does not start it twice.'));
 }
 
 function download_donor_master($params)

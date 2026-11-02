@@ -1,5 +1,5 @@
 <?php
-// Help page: Sending donations to Tally. Simple English, no technical details. Checked against the live code on 2026-10-30.
+// Help page: Sending donations to Tally. Simple English, no technical details. Checked against the live code on 2026-11-02.
 return array(
   'title' => 'Sending donations to Tally',
   'summary' => 'Send donations to Tally and see which ones were sent.',
@@ -14,7 +14,7 @@ return array(
         . '<ol>'
         . '<li>Click {tab:report}.</li>'
         . '<li>Click <b class="ui">Sync to Tally</b>.</li>'
-        . '<li>Dana shows a message that it will take a few minutes.</li>'
+        . '<li>Dana shows a message that the sending has started. It takes a few minutes.</li>'
         . '</ol>'
         . '<ul>'
         . '<li>Dana sends every donation that was not sent before, of any date.</li>'
@@ -30,7 +30,8 @@ return array(
         . '</ol>'
         . '<p>If Tally could not take a donation, it stays in this list. Click <b class="ui">Sync to Tally</b> again later.</p> '
         . '<p>Cancelled donations are never sent. So they can also be in this list.</p> '
-        . '<p class="note">Click <b class="ui">Sync to Tally</b> only once. Wait a few minutes before you click it again.</p> ',
+        . '<p class="note">If you click <b class="ui">Sync to Tally</b> while the sending is still going on, Dana tells you and does not start it again. '
+        . 'So a second click does not send a donation twice.</p> ',
     ),
     array(
       'id' => 'filters',
