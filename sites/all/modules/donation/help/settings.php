@@ -1,5 +1,5 @@
 <?php
-// Help page: Centre settings. Simple English, no technical details. Checked against the live code on 2026-10-30.
+// Help page: Centre settings. Simple English, no technical details. Checked against the live code on 2026-11-02.
 return array(
   'title' => 'Centre settings',
   'summary' => 'Set receipt defaults, categories, payment types, receipt and email templates, and trust details.',
@@ -38,6 +38,7 @@ return array(
         . '<li>Write one type on each line, as a short code, then =, then the name.</li>'
         . '<li>Example: <i>cash=Cash</i></li>'
         . '<li>Staff see the name. Dana keeps the short code with each donation.</li>'
+        . '<li>Keep the line for online donations that is already in the list: donations from Online Dana use it. It does not show on the donation form.</li>'
         . '</ul> '
         . '<p class="note">Do not change or remove a line that donations already use. '
         . 'Old donations keep their old category and code. '

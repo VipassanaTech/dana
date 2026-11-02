@@ -73,7 +73,8 @@ return array(
       'title' => 'Amount, payment and course',
       'rights' => array(),
       'body' => '<ol>'
-        . '<li>Choose the <b class="ui">Type of Transaction</b>: how the donor paid.</li>'
+        . '<li>Choose the <b class="ui">Type of Transaction</b>: how the donor paid. '
+        . 'There is no type for online donations: they come in from Online Dana by themselves.</li>'
         . '<li>For cash or kind, nothing more is needed. For other types, the <b class="ui">Cheque/Card/Bank Transfer</b> boxes appear. '
         . 'Fill in <b class="ui">Reference No</b>, <b class="ui">Bank</b>, <b class="ui">Branch</b> and <b class="ui">Chq Date</b> as needed.</li>'
         . '<li>Type the <b class="ui">Donation Amount</b>. Use digits only: no commas, dots or spaces.</li>'

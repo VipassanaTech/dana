@@ -986,12 +986,19 @@ function donation_main_form($form, &$form_state, $edit_data = array())
 		$currencies[ $row->c_code ] = $row->c_code.' - '.$row->c_name;
 
 	$txns = explode("\n", variable_get('txn_types', ""));
+	$txn_types = array();
 	foreach ($txns as $v) 
 	{
 		$t = explode("=", $v);
 		if (count($t) >= 2)
 			$txn_types[trim($t[0])] = trim($t[1]);
 	}
+	// Razorpay is only for the receipts that come in from Online Dana, which cannot be changed in Dana: it is never
+	// offered here, for a new donation or an edit, so a receipt cannot be made Razorpay by mistake (2026-11-02).
+	// A value not in the list is refused by the form ("An illegal choice"). It stays in Settings and the Report.
+	foreach (array_keys($txn_types) as $k)
+		if (strtolower(trim($k)) === 'razorpay')
+			unset($txn_types[$k]);
 
 	$id_types = donor_id_type_options(isset($edit_data['d_id_type']) ? $edit_data['d_id_type'] : NULL);
 
