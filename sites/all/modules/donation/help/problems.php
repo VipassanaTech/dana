@@ -1,5 +1,5 @@
 <?php
-// Help page: Common problems. Simple English, no technical details. Checked against the live code on 2026-10-30.
+// Help page: Common problems. Simple English, no technical details. Checked against the live code on 2026-11-02.
 return array(
   'title' => 'Common problems',
   'summary' => 'What a message means and what to do.',
@@ -87,7 +87,7 @@ return array(
         . '<li>Under the <b class="ui">User login</b> box, click <b class="ui">Request new password</b>.</li>'
         . '<li>Type your username or the email address of your Dana account in <b class="ui">Username or e-mail address</b>.</li>'
         . '<li>Click <b class="ui">E-mail new password</b>.</li>'
-        . '<li>An email comes from Dana (dipi@vridhamma.org) in a minute or two. Click the link in it. The link works only once, and only for 24 hours.</li>'
+        . '<li>An email from Dana comes in a minute or two, from {sitemail}. Click the link in it. The link works only once, and only for 24 hours.</li>'
         . '<li>On the page that opens, click <b class="ui">Log in</b>.</li>'
         . '<li>Type a new password in <b class="ui">Password</b> and <b class="ui">Confirm password</b>, then click <b class="ui">Save</b>. Follow the password rules above.</li>'
         . '</ol>'

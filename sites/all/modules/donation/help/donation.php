@@ -1,5 +1,5 @@
 <?php
-// Help page: Entering a donation. Simple English, no technical details. Checked against the live code on 2026-10-30.
+// Help page: Entering a donation. Simple English, no technical details. Checked against the live code on 2026-11-02.
 return array(
   'title' => 'Entering a donation',
   'summary' => 'Enter a donation, check the donor and the ID, choose how the receipt is sent, and read the messages after saving.',
@@ -19,7 +19,7 @@ return array(
         . '<li>Check the details with the donor. Correct them if needed.</li>'
         . '</ol>'
         . '<p class="note">When a course is chosen, the list may show only the students of that course. '
-        . 'To search all donors, choose <b class="ui">Non Course</b>.</p> '
+        . 'To search all donors, choose <b class="ui">Non Course</b>. How students come in: {help:dipi-students}.</p> '
         . '<p>To start again, clear the <b class="ui">Donor Name</b> box. '
         . 'Dana then also empties the contact, email, ID No and address boxes.</p> ',
     ),

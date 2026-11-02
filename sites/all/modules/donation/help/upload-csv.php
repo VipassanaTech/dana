@@ -10,6 +10,7 @@ return array(
       'title' => 'What it is for',
       'body' => '<p>When you choose a course on the donation form, Dana shows the students of that course in <b class="ui">Donor Name</b>.'
         . ' This page adds the students of a course to Dana from a file.</p>'
+        . '<p>Most students come in from DIPI by themselves: see {help:dipi-students}. Use this page when they did not.</p>'
         . '<p>Open it with the {tab:uploadcsv} tab at the top of the page.</p>'
         . '<p class="note">Dana first checks the whole file and lists every problem. Nothing is saved until the file has no problems and you click <b class="ui">Use this file</b>.</p>',
     ),
