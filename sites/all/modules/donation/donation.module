@@ -14,6 +14,7 @@ require_once('user-admin.inc');
 require_once('id-rules.inc');
 require_once('upload-check.inc');
 require_once('help.inc');
+require_once('donor-merge.inc');
 define('RECEPIT_PREFIX', 'ER-');
 define('DONATION_DONORVER_CODE', 3);                 // read by the phase-C runner (M10 code-version gate)
 define('DONATION_DONORVER_REQUIRE_FREEZE', TRUE);    // TRUE since 2026-10-21 (phase 3 on every site): writes refused if the freeze trigger is missing (M9); set FALSE before a planned rollback (E1)

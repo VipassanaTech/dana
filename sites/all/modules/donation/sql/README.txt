@@ -37,3 +37,12 @@ Standard rights (2026-10-28) — STD-role-perms.sql
   When a new right is added to a standard role: add it to this file, then run it on every site.
   Run:   DB_EXCLUDE=dana_ahobilam_premerge ./dana-donorver-fleet.sh STD [--only DB]   (dry run), then add --execute
   New sites: create-dana-domain runs it after the template and UA-user-admin.sql.
+
+Duplicate donors (2026-11) — DM-donor-merge.sql
+  Adds per site: dh_donor_merge (one row per merge: the kept record, who, when, what changed on it, undone),
+  dh_donor_merge_hidden (the records a merge hid, d_deleted = 1) and dh_donor_notsame (pairs marked "not the same
+  person"). A merge moves no donation. The tables record which copy went into which kept record, so a clean-up run
+  can be undone (the DIPI sync, Upload CSV and the online import match only active donors). Safe to re-run.
+  Run:   DB_EXCLUDE=dana_ahobilam_premerge ./dana-donorver-fleet.sh DM [--only DB]   (dry run), then add --execute
+  New sites: create-dana-domain runs it after the template (vri-1-scripts).
+  Rollback: undo the merges first (the clean-up tool's --rollback); the tables can stay.

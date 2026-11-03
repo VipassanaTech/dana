@@ -567,6 +567,12 @@ function donor_delete_donation_count($donor_id)
 function donor_delete_confirm($form, &$form_state, $donor)
 {
 	$count = donor_delete_donation_count($donor['d_id']);
+	if (donor_merge_is_kept($donor['d_id'])) {
+		// duplicate records were combined into this one: they would point at a deleted donor
+		drupal_set_message(t('Cannot delete donor %name: duplicate records of this donor were combined into it.', array('%name' => $donor['d_name'])), 'error');
+		$form['back'] = array('#markup' => '<p>' . l(t('Back to the donors list'), 'donors') . '</p>');
+		return $form;
+	}
 	if ($count > 0) {
 		drupal_set_message(t('Cannot delete donor %name: @n donation(s) are mapped to this donor.',
 			array('%name' => $donor['d_name'], '@n' => $count)), 'error');
@@ -587,6 +593,10 @@ function donor_delete_confirm_submit($form, &$form_state)
 	$name = $form_state['values']['d_name'];
 	$form_state['redirect'] = 'donors';
 	$count = donor_delete_donation_count($id);
+	if (donor_merge_is_kept($id)) {
+		drupal_set_message(t('Cannot delete donor %name: duplicate records of this donor were combined into it.', array('%name' => $name)), 'error');
+		return;
+	}
 	if ($count > 0) {                                   // a donation was added in the meantime
 		drupal_set_message(t('Cannot delete donor %name: @n donation(s) are mapped to this donor.', array('%name' => $name, '@n' => $count)), 'error');
 		return;
@@ -685,6 +695,12 @@ function donor_changelog_table($donor_id)
 
 	foreach ($result as $r) {
 		$data = json_decode($r->l_msg, TRUE);
+		// duplicate clean-up (2026-11): one readable line instead of the raw record
+		if ($r->l_event === 'Donors merged' || $r->l_event === 'Merge undone') {
+			$who = ($r->l_user == 0) ? t('System / Sync') : ($r->uname !== NULL ? check_plain($r->uname) : t('uid @u', array('@u' => $r->l_user)));
+			$rows[] = array(donor_merge_log_text($r->l_event, is_array($data) ? $data : array(), $donor_id), check_plain($r->l_tstamp), $who);
+			continue;
+		}
 		// Donor versioning events (freeze, year correction, apply-to-FY, skipped freeze): one readable sentence (already escaped).
 		if ($r->l_event !== NULL && strncmp($r->l_event, 'FY ', 3) === 0) {
 			$what = donor_changelog_fy_text($r->l_event, is_array($data) ? $data : array(), $donor_id);
