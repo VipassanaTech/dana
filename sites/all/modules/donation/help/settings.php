@@ -1,5 +1,5 @@
 <?php
-// Help page: Centre settings. Simple English, no technical details. Checked against the live code on 2026-11-02.
+// Help page: Centre settings. Simple English, no technical details. Checked against the live code on 2026-11-03.
 return array(
   'title' => 'Centre settings',
   'summary' => 'Set receipt defaults, categories, payment types, receipt and email templates, and trust details.',
@@ -109,6 +109,19 @@ return array(
         . '<p>The new settings work at once for everyone at your centre.</p> '
         . '<p class="note">Some fields must not be empty. They are marked with a star. '
         . 'If one is empty, Dana shows an error and saves nothing. Fill it in and save again.</p> ',
+    ),
+    array(
+      'id' => 'history',
+      'title' => 'Settings history',
+      'rights' => array(),
+      'body' => '<p>Click <b class="ui">Settings history</b> at the top of {tab:settings} to see the changes saved on this page.</p> '
+        . '<ul>'
+        . '<li>Each line shows when, who, which setting, and the value before and after.</li>'
+        . '<li>The newest change is at the top.</li>'
+        . '<li>For long settings, like the templates, click <b class="ui">Show</b> to see the full text.</li>'
+        . '</ul> '
+        . '<p>This also helps to put back a template: copy the old text from <b class="ui">Before</b>.</p> '
+        . '<p class="note">Only changes saved on this page are listed, from the day the history started.</p> ',
     ),
   ),
 );

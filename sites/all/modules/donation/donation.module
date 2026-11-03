@@ -15,6 +15,7 @@ require_once('id-rules.inc');
 require_once('upload-check.inc');
 require_once('help.inc');
 require_once('donor-merge.inc');
+require_once('settings-log.inc');
 define('RECEPIT_PREFIX', 'ER-');
 define('DONATION_DONORVER_CODE', 3);                 // read by the phase-C runner (M10 code-version gate)
 define('DONATION_DONORVER_REQUIRE_FREEZE', TRUE);    // TRUE since 2026-10-21 (phase 3 on every site): writes refused if the freeze trigger is missing (M9); set FALSE before a planned rollback (E1)
@@ -72,6 +73,10 @@ function donation_menu()
                'page arguments' => array('donation_admin_form'),
                'page callback' => 'drupal_get_form',
                'access arguments' => array('administer donation'));
+        $items['admin/donation/history'] = array('title' => 'Settings history',     // settings-log.inc (2026-11-03)
+               'page callback' => 'donation_settings_history_page',
+               'access arguments' => array('administer donation'),
+               'type' => MENU_CALLBACK);
 
 	$items['donation'] = array( 'title' => t('Donation'),
 	       'page callback' => 'donation_manage',
@@ -435,6 +440,8 @@ function donation_file_download($uri)
 function donation_admin_form($form, &$form_state)
 {
   $form['dana_help'] = array('#markup' => dana_help_link('settings'), '#weight' => -100);
+  $form['settings_history'] = array('#markup' => '<p>' . l(t('Settings history'), 'admin/donation/history') . ': '
+    . t('who changed which setting, and when.') . '</p>', '#weight' => -99);
 
   $form["set_receipt_paper"] = array('#type' => 'checkbox', '#title' => 'Set Paper as Default', '#default_value' => variable_get("set_receipt_paper", 0));
   $form["set_receipt_email"] = array('#type' => 'checkbox', '#title' => 'Set Email as Default', '#default_value' => variable_get("set_receipt_email", 0));
@@ -655,9 +662,11 @@ function donation_admin_form($form, &$form_state)
          '#title' => t('Email to send a bcc copy of the receipt'),
          '#description' => t('Email to send a bcc copy of the receipt. For eg centre email id for reference'),
    );
-   
- 
-   return system_settings_form($form);
+
+
+   $form = system_settings_form($form);
+   donation_settings_log_attach($form);                // Settings history: record every setting a Save changes
+   return $form;
 }
 
 
