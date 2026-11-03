@@ -567,12 +567,6 @@ function donor_delete_donation_count($donor_id)
 function donor_delete_confirm($form, &$form_state, $donor)
 {
 	$count = donor_delete_donation_count($donor['d_id']);
-	if (donor_merge_is_kept($donor['d_id'])) {
-		// duplicate records were combined into this one: they would point at a deleted donor
-		drupal_set_message(t('Cannot delete donor %name: duplicate records of this donor were combined into it.', array('%name' => $donor['d_name'])), 'error');
-		$form['back'] = array('#markup' => '<p>' . l(t('Back to the donors list'), 'donors') . '</p>');
-		return $form;
-	}
 	if ($count > 0) {
 		drupal_set_message(t('Cannot delete donor %name: @n donation(s) are mapped to this donor.',
 			array('%name' => $donor['d_name'], '@n' => $count)), 'error');
@@ -593,10 +587,6 @@ function donor_delete_confirm_submit($form, &$form_state)
 	$name = $form_state['values']['d_name'];
 	$form_state['redirect'] = 'donors';
 	$count = donor_delete_donation_count($id);
-	if (donor_merge_is_kept($id)) {
-		drupal_set_message(t('Cannot delete donor %name: duplicate records of this donor were combined into it.', array('%name' => $name)), 'error');
-		return;
-	}
 	if ($count > 0) {                                   // a donation was added in the meantime
 		drupal_set_message(t('Cannot delete donor %name: @n donation(s) are mapped to this donor.', array('%name' => $name, '@n' => $count)), 'error');
 		return;

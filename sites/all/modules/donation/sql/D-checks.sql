@@ -143,8 +143,8 @@ BEGIN NOT ATOMIC
       FROM dh_donor_version v JOIN dh_donor o ON o.d_id = v.dv_donor
      WHERE v.dv_created < COALESCE(LEAST(o.d_created, o.d_tstamp), o.d_tstamp, o.d_created) - INTERVAL 5 MINUTE;
     INSERT INTO tmp_dana_checks (chk, status, val, detail) VALUES ('IDREUSE', IF(v_n = 0, 'OK', 'FAIL'), v_n, IFNULL(CONCAT('donors ', v_d), ''));
-    -- ---- MERGE (duplicate donors, 2026-11): after a merge no new donation lands on a record it hid; a hidden record
-    --      stays hidden; a kept record is active or itself hidden by a later merge (a chain is followed) ----
+    -- ---- MERGE (duplicate donors, 2026-11): after a merge no new donation lands on a record it hid, and a hidden
+    --      record stays hidden. A kept record may be deleted like any donor (user 2026-11-03) ----
     IF (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()
           AND TABLE_NAME IN ('dh_donor_merge', 'dh_donor_merge_hidden')) = 2 THEN
       SELECT COUNT(*) INTO v_n FROM dh_donor_merge mg JOIN dh_donor_merge_hidden mh ON mh.mh_merge = mg.mg_id
@@ -153,12 +153,8 @@ BEGIN NOT ATOMIC
       SELECT v_n + COUNT(*) INTO v_n FROM dh_donor_merge mg JOIN dh_donor_merge_hidden mh ON mh.mh_merge = mg.mg_id
         JOIN dh_donor o ON o.d_id = mh.mh_donor
        WHERE mg.mg_undone_at IS NULL AND o.d_deleted <> 1;
-      SELECT v_n + COUNT(*) INTO v_n FROM dh_donor_merge mg JOIN dh_donor k ON k.d_id = mg.mg_kept
-       WHERE mg.mg_undone_at IS NULL AND k.d_deleted <> 0
-         AND NOT EXISTS (SELECT 1 FROM dh_donor_merge mg2 JOIN dh_donor_merge_hidden mh2 ON mh2.mh_merge = mg2.mg_id
-                          WHERE mg2.mg_undone_at IS NULL AND mh2.mh_donor = mg.mg_kept);
       INSERT INTO tmp_dana_checks (chk, status, val, detail) VALUES ('MERGE', IF(v_n = 0, 'OK', 'FAIL'), v_n,
-        'new donations on hidden records, hidden records shown again, kept records gone');
+        'new donations on hidden records, hidden records shown again');
     ELSE
       INSERT INTO tmp_dana_checks (chk, status, val, detail) VALUES ('MERGE', 'OK', 0, 'no merge tables yet');
     END IF;

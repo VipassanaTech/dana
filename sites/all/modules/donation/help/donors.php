@@ -42,8 +42,8 @@ return array(
         . ' <b class="ui">What changed</b> shows the old and the new value.'
         . ' <b class="ui">When</b> is the date and time. <b class="ui">Who</b> is the user who made the change.</p> '
         . '<p>If <b class="ui">Who</b> says <b class="ui">System / Sync</b>, the change came in automatically, not from a person.</p> '
-        . '<p>Some donors were in Dana twice or more, with the same name and mobile or ID. Copies with no donations were combined into the record that has the donations. '
-        . 'The copies are no longer in the lists, and the history of the record that has the donations says so.</p> ',
+        . '<p>Some donors were in Dana twice or more, with the same name and mobile or ID. One record of each such donor was kept, and the extra copies with no donations were removed. '
+        . 'The history of the kept record says which copies were removed.</p> ',
     ),
     array(
       'id' => 'edit',
@@ -151,7 +151,6 @@ return array(
         . '<p>Dana says the donor was deleted. The donor is no longer in the list.</p> '
         . '<p>If the donor has donations, <b class="ui">Delete</b> is plain text, not a link.'
         . ' Point the mouse at it to see <b class="ui">Has mapped donations</b>.</p> '
-        . '<p>A donor into which duplicate records were combined cannot be deleted. Dana says so on the page.</p> '
         . '<p class="note">Check the name before you click Delete. There is no undo on the screen.</p> ',
     ),
   ),
